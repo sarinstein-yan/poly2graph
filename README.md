@@ -1,7 +1,7 @@
 # Poly2Graph & GnLTransformer 
 <!-- [📄 *arXiv*](https://arxiv.org/) -->
 
-`Poly2Graph` is a Python package for automatic non-Hermitian spectral graph construction. It takes in the characteristic polynomial and returns the spectral graph.
+`Poly2Graph` is a Python package for automatic *non-Hermitian spectral graph* construction. It takes in the characteristic polynomial and returns the spectral graph.
 
 > Topological physics is one of the most dynamic and rapidly advancing fields in modern physics. Conventionally, topological classification focuses on eigenstate windings, a concept central to Hermitian topological lattices (e.g., topological insulators). Beyond such notion of topology, we unravel a distinct and diverse graph topology emerging in non-Hermitian systems' energy spectra, featuring a kaleidoscope of exotic shapes like stars, kites, insects, and braids. The spectral graph solely depends on the algebraic form of characteristic polynomial.
 
@@ -19,8 +19,8 @@
 - **Poly2Graph**
   1. Fast construction of spectral graph from characteristic polynomial
   2. Support for one-band and multi-band systems
-  3. Adaptive resolution for spectral potential calculation
-  4. Automatic Spectral Boundary Determination
+  3. Adaptive resolution for spectral potential calculation (one-band only)
+  4. Automatic Spectral Boundary Determination (one-band only)
   5. Convert skeletonized image to its graph representation
   6. Dataset generation (one-band only)
   7. Visualization of spectral potential, density of states, and spectral graph
@@ -69,7 +69,7 @@ Take a one-band characteristic polynomial as an example:
 
 $$P(E,z) = -z^{-2} - E - z + z^4$$
 
-its coefficient list is `c = [0, 0, -1, 0, 0, -1, 0, 0, 1]`. `poly2graph` only takes in **symmetric** coefficient list where the middle element is the constant term (i.e. the coefficient of $z^0$). This is how `poly2graph` identifies the degree range.
+its coefficient list is `c = [0, 0, -1, 0, 0, -1, 0, 0, 1]`. `poly2graph` only takes in **symmetric** coefficient list where the middle element is the constant term (i.e. the coefficient of $z^0$). This is how `poly2graph` identifies the degree range. Note that the $-E$ term appearing as an addition to the constant term is the same for all one-band systems; thus there's no need to specify it. `poly2graph` automatically takes care.
 
 ```python
 ### coefficient list (symmetrically formatted)
@@ -189,7 +189,7 @@ h(z) = [[ (1/2) z,        z^2 + z^(-1) ],
 ```
 where the phase factor is defined as $z:=e^{ik}$.
 
-`poly2graph` only takes in **symmetric** (rectangular) coefficient *matrix* where the middle element is the constant term (i.e. the coefficient of $z^0 E^0$):
+`poly2graph` only takes in **symmetric** (rectangular) coefficient **matrix** where the middle element is the constant term (i.e. the coefficient of $z^0 E^0$):
 ```
    [[ ...     ...           ...           ...          ...          ...     ... ]
     [ ... c(z^-2 E^-2)  c(z^-1 E^-2)  c(z^0 E^-2)  c(z^1 E^-2)  c(z^2 E^-2) ... ]
@@ -225,12 +225,17 @@ plt.show()
 </p>
 
 > [!NOTE] 
-> Note that `auto_Emaxes` and `E_splits>1` are not yet supported for multi-band polynomials.
+> Note that `auto_Emaxes` and `E_splits > 1` are not yet supported for multi-band polynomials.
 
 ## TODO
-- [ ] Automatic energy grid boundary determination for multi-band systems
-- [ ] Adaptive resolution for multi-band systems
-- [ ] Tutorials for dataset generation and `GnLTransformer`
+- [ ] Multi-band system support
+  - [ ] Automatic energy grid boundary determination
+  - [ ] Adaptive resolution
+  - [ ] Dataset generation
+- [ ] Tutorials
+  - [ ] dataset generation
+  - [ ] `GnLTransformer`
+  - [ ] explainability visualizations
 
 <!-- ## Citation
 If you find this work useful, please cite our paper:
