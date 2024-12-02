@@ -19,8 +19,8 @@
 - **Poly2Graph**
   1. Fast construction of spectral graph from characteristic polynomial
   2. Support for one-band and multi-band systems
-  3. Adaptive resolution for spectral potential calculation
-  4. Automatic Spectral Boundary Determination
+  3. Adaptive resolution for spectral potential calculation (one-band only)
+  4. Automatic Spectral Boundary Determination (one-band only)
   5. Convert skeletonized image to its graph representation
   6. Dataset generation (one-band only)
   7. Visualization of spectral potential, density of states, and spectral graph
@@ -228,9 +228,14 @@ plt.show()
 > Note that `auto_Emaxes` and `E_splits>1` are not yet supported for multi-band polynomials.
 
 ## TODO
-- [ ] Automatic energy grid boundary determination for multi-band systems
-- [ ] Adaptive resolution for multi-band systems
-- [ ] Tutorials for dataset generation and `GnLTransformer`
+- [ ] Multi-band system support
+  - [ ] Automatic energy grid boundary determination
+  - [ ] Adaptive resolution
+  - [ ] Dataset generation
+- [ ] Tutorials
+  - [ ] dataset generation
+  - [ ] `GnLTransformer`
+  - [ ] explainability visualizations
 
 <!-- ## Citation
 If you find this work useful, please cite our paper:
