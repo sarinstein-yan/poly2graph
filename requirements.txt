@@ -1,0 +1,11 @@
+numpy
+matplotlib
+numba
+networkx
+scikit-image
+scikit-learn
+pandas
+tqdm
+sympy
+torchmetrics
+gdown
