@@ -262,10 +262,11 @@ def spectral_potential(
         Complex energy array to compute the TDL spectra. If provided, it will override
         the energy range calculated from E_max and E_len. Default is None.
     method : int or str, optional
-        Method to calculate the TDL spectra:
-            - 1 or 'spectral' : spectral potential landscape
-            - 2 or 'diff_log' : difference of inverse skin depths corresponding to the 
-                                least 2 |z|'s
+        Method to calculate the spectral landscape where the *ridges* are the spectral
+        graph skeleton:
+            - None or 1 or 'spectral' : spectral potential landscape
+            - 2 or 'diff_log' : difference of inverse skin depths corresponding to 
+                                the least 2 |z|'s
             - 3 or 'log_diff' : log difference of the least 2 |z|'s
         Default is None.
 
@@ -313,16 +314,22 @@ def spectral_potential(
     # Proceed to compute phi based on the selected method
     if method is None or method == 1 or method == 'spectral':
         # Method 1: spectral potential landscape
-        betas_q = np.sort(np.abs(z), axis=-1)[:, -q:]  # q largest |z|'s
-        phi = np.log(np.abs(coeff[:, -1])) + np.sum(np.log(betas_q), axis=-1)
+        zs_q = np.sort(np.abs(z), axis=-1)[:, -q:]  # q largest |z|'s
+        phi = np.log(np.abs(coeff[:, -1])) + np.sum(np.log(zs_q), axis=-1)
     elif method == 2 or method == 'diff_log':
-        # Method 2: difference of kappas corresponding to the least 2 |z|'s
+        # Method 2: the difference of kappa's corresponding to the least 2 |z|'s
         kappas = -np.log(np.sort(np.abs(z), axis=-1))
-        phi = kappas[:, 0] - kappas[:, 1]
+        kappa_diffs = kappas[:, :-1] - kappas[:, 1:]
+        phi = -kappa_diffs[:, 0]
+        # phi = -np.min(kappa_diffs, axis=-1)
     elif method == 3 or method == 'log_diff':
         # Method 3: log difference of the least 2 |z|'s
-        betas = np.sort(np.abs(z), axis=-1)
-        phi = np.log(betas[:, 1] - betas[:, 0])
+        zs = np.sort(np.abs(z), axis=-1)
+        min_z_diffs = zs[:, 1] - zs[:, 0]
+        # min_z_diffs = np.min(zs[:, 1:] - zs[:, :-1], axis=-1)
+        phi = -np.log(min_z_diffs/np.max(min_z_diffs))
+        # replace nan with the max of the rest
+        phi[np.isnan(phi)] = np.nanmax(phi)
     else:
         raise ValueError("Invalid method specified. Choose 1, 2, or 3.")
     
@@ -334,7 +341,8 @@ def spectral_images_adaptive_resolution(
     E_len: Optional[int] = 512,
     E_splits: Optional[int] = 1,
     thresholder: Optional[Callable] = np.mean,
-    PosGoL_kwargs: Optional[dict] = {}
+    PosGoL_kwargs: Optional[dict] = {},
+    potential_method: Optional[Union[int, str]] = None
 ) -> np.ndarray:
     """
     Generate the spectral potential landscape, density of states, and graph
@@ -365,6 +373,14 @@ def spectral_images_adaptive_resolution(
         Function to threshold the ridge image. Default is np.mean.
     PosGoL_kwargs : dict, optional
         Additional keyword arguments for the PosGoL filter.
+    potential_method : int or str, optional
+        Method to calculate the spectral potential landscape where the *ridges* are the 
+        spectral graph skeleton:
+            - None or 1 or 'spectral' : spectral potential landscape
+            - 2 or 'diff_log' : difference of inverse skin depths corresponding to 
+                                the least 2 |z|'s
+            - 3 or 'log_diff' : log difference of the least 2 |z|'s
+        Default is None.
 
     Returns
     -------
@@ -389,8 +405,11 @@ def spectral_images_adaptive_resolution(
     E_arr = np.linspace(E_re_min, E_re_max, E_len) + \
                 1j*np.linspace(E_im_min, E_im_max, E_len)[:, None]
 
-    phi = spectral_potential(c, E_array=E_arr)
-    ridge = PosGoL(phi, **PosGoL_kwargs)
+    phi = spectral_potential(c, E_array=E_arr, method=potential_method)
+    if potential_method in [None, 1, 'spectral']:
+        ridge = PosGoL(phi, **PosGoL_kwargs)
+    else:
+        ridge = phi
     binary = ridge > thresholder(ridge)
     if E_splits <= 1 or E_splits is None:
         return binary, phi, ridge
@@ -528,6 +547,7 @@ def spectral_graph(
     contract_threshold: Optional[Union[int, float]] = 15,
     s2g_kwargs: Optional[dict] = {},
     PosGoL_kwargs: Optional[dict] = {},
+    potential_method: Optional[Union[int, str]] = None
 ) -> nxGraph:
     '''
     Generate the spectral graph of a given one-band / multi-band characteristic polynomial.
@@ -570,6 +590,14 @@ def spectral_graph(
         Additional keyword arguments for skeleton2graph.
     PosGoL_kwargs : dict, optional
         Additional keyword arguments for the PosGoL filter.
+    potential_method : int or str, optional
+        Method to calculate the spectral potential landscape where the *ridges* are the 
+        spectral graph skeleton:
+            - None or 1 or 'spectral' : spectral potential landscape
+            - 2 or 'diff_log' : difference of inverse skin depths corresponding to 
+                                the least 2 |z|'s
+            - 3 or 'log_diff' : log difference of the least 2 |z|'s
+        Default is None.
 
     Returns
     -------
@@ -590,7 +618,7 @@ def spectral_graph(
     '''
 
     binary, phi, ridge = spectral_images_adaptive_resolution(c, E_max, 
-                                E_len, E_splits, thresholder, PosGoL_kwargs)
+                E_len, E_splits, thresholder, PosGoL_kwargs, potential_method)
 
     ske = skeletonize(binary, method='lee')
 

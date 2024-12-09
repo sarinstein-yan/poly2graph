@@ -2,16 +2,14 @@
 requires = ["setuptools>=62", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["poly2graph"]
-
 [project]
 name = "poly2graph"
-version = "0.0.2"
+version = "0.0.3"
 description = "Automated Non-Hermitian Spectral Graph Construction"
 authors = [
     {name = "Xianquan (Sarinstein) Yan", email = "xianquanyan@gmail.com"}
 ]
+keywords = ["non-hermitian spectral graph", "non-bloch band", "algebraic geometry", "graph representation learning", "transformer", "computer vision", "morphological image processing"]
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.9"
@@ -35,3 +33,4 @@ dev = ["torch", "torch_geometric", "tensorflow"]  # Optional packages to install
 
 [project.urls]
 Homepage = "https://github.com/sarinstein-yan/poly2graph"
+Repository = "https://github.com/sarinstein-yan/poly2graph"
