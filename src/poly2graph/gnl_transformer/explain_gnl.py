@@ -65,6 +65,7 @@ class ExplanationSummary():
             self.to_networkx_Graph()
     
     def get_data(self, idx, y_true=None):
+        self.idx = idx
         data_G, data_L = self.dataset[idx]
         data_G.batch = torch.zeros(data_G.num_nodes, dtype=torch.long)
         data_L.batch = torch.zeros(data_L.num_nodes, dtype=torch.long)
@@ -235,8 +236,8 @@ class ExplanationSummary():
         # plot 0: DOS
         img = PosGoL(spectral_potential(
             c=self.poly_coeffs,
-            Emax=emax,
-            Elen=200
+            E_max=emax,
+            E_len=200
         ), ksizes=[11])
         ax[0].imshow(img, cmap='gray', extent=emax, aspect='equal')
         ax[0].set_title('Density of States')
