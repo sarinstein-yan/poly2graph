@@ -32,7 +32,7 @@
 
 ## Installation
 
-First make sure you have installed [`tensorflow`](https://www.tensorflow.org/) [`pytorch`](https://pytorch.org/), and [`torch_geometric`]( https://pytorch-geometric.readthedocs.io/en/latest/) according to your machine specifics. This module is tested on `Python 3.11.9`, `tensorflow 2.17.0`, `torch 2.4.1+cu121`, and `torch_geometric 2.6.1`.
+First make sure you have installed [`tensorflow`](https://www.tensorflow.org/) [`pytorch`](https://pytorch.org/), and [`torch_geometric`]( https://pytorch-geometric.readthedocs.io/en/latest/) according to your machine specifics. This module is tested on `Python 3.9~3.12`, `tensorflow >=2.10`, `torch >=2.4 + cu121`, and `torch_geometric >=2.6`.
 
 `tensorflow` (CPU version is enough) is required for the optimization of `poly2graph`. `GnLTransformer` is written in `pytorch` and `torch_geometric`.
 
