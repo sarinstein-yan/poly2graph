@@ -1,16 +1,24 @@
 [build-system]
-requires = ["setuptools>=62", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "poly2graph"
-version = "0.0.3"
+dynamic = ["version"]
 description = "Automated Non-Hermitian Spectral Graph Construction"
 authors = [
-    {name = "Xianquan (Sarinstein) Yan", email = "xianquanyan@gmail.com"}
+    {name = "Xianquan (Sarinstein) Yan", email = "xianquanyan@gmail.com"},
+    {name = "Hakan Akgün", email = "hakanakgun317@gmail.com"},
 ]
-keywords = ["non-hermitian spectral graph", "non-bloch band", "algebraic geometry", "graph representation learning", "transformer", "computer vision", "morphological image processing"]
-readme = "README.md"
+maintainers  = [
+    {name = "Xianquan (Sarinstein) Yan", email = "xianquanyan@gmail.com"},
+]
+keywords = [
+    "non-hermitian spectral graph", "non-bloch band", "algebraic geometry", 
+    "graph representation learning", "transformer", "computer vision", 
+    "morphological image processing"
+]
+readme = {"file" = "README.md", "content-type" = "text/markdown"}
 license = {file = "LICENSE"}
 requires-python = ">=3.9"
 classifiers = [
@@ -24,13 +32,22 @@ dependencies = [
     "numba",
     "networkx",
     "scikit-image",
-    "torchmetrics",
+    "scikit-learn",
     "gdown"
 ]
 
 [project.optional-dependencies]
-dev = ["torch", "torch_geometric", "tensorflow"]  # Optional packages to install manually
+require = ["torch", "torch_geometric", "tensorflow"]  # packages to install manually
 
 [project.urls]
 Homepage = "https://github.com/sarinstein-yan/poly2graph"
 Repository = "https://github.com/sarinstein-yan/poly2graph"
+
+[tool.hatch.version]
+path = "src/poly2graph/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["assets"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/poly2graph"]
