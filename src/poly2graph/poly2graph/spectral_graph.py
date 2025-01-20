@@ -580,8 +580,8 @@ def spectral_graph(
         If True (the default), the density of states is included as a node feature.
     scale_features : int or float, optional
         If None, the positions of nodes and edges are pixel indices, i.e., in 
-        [0, E_len*E_splits-1]. If provided, the node features are scaled by this factor. 
-        Default is 1.
+        [0, E_len*E_splits-1]. If provided, the node features are the actual energy
+        scaled by this factor. Default is 1.
     thresholder : callable, optional
         Function to threshold the ridge image. Default is np.mean.
     contract_threshold : int or float, optional
