@@ -6,7 +6,7 @@ generate_full_coefficients,
 class_samples_step,
 class_samples_rand,
 generate_coefficients_balanced,
-generate_dataset, 
+generate_dataset,
 load_dataset
 )
 

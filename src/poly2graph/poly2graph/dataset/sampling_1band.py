@@ -74,9 +74,10 @@ def generate_dataset(
     file_name_prefix: str,
     coeff_matrix: Union[ArrayLike, List],
     labels: Union[ArrayLike, List],
-    Elen: int,
-    contract_threshold: Optional[int]=None,
     num_partition: Optional[int]=1,
+    E_len: Optional[int]=250,
+    E_splits: Optional[int]=4,
+    contract_threshold: Optional[int]=15,
     auto_Emaxes_kwargs: Optional[dict]={}
 ) -> None:
     
@@ -102,12 +103,13 @@ def generate_dataset(
         graphs = []
         for c in partition_coeff_matrix:
             Eauto = auto_Emaxes(c, **auto_Emaxes_kwargs)
-            graph = spectral_graph(c, Emax=Eauto, Elen=Elen, 
-                              contract_threshold=contract_threshold,
-                              Potential_feature=True,
-                              DOS_feature=True,
-                              s2g_kwargs={},
-                              PosGoL_kwargs={'ksizes': [11]}) 
+            graph = spectral_graph(c, 
+                    E_max=Eauto, 
+                    E_len=E_len, 
+                    E_splits=E_splits,
+                    contract_threshold=contract_threshold,
+                    Potential_feature=True,
+                    DOS_feature=True)
             graphs.append(graph)
             print(f'Partition {partition + 1} / {num_partition}: {len(graphs)} / {end_index - start_index}', end='\r')
         
@@ -156,17 +158,19 @@ def load_dataset(file_name_prefix, num_partition=None):
 if __name__ == '__main__':
     if not os.path.exists('./Datasets'):
         os.makedirs('./Datasets')
-    # generate_dataset('./Datasets/dataset_graph_dim6', samples_per_dim=7, dim=6, c_max=1.2, Elen=900, num_partition=10)
+    # generate_dataset('./Datasets/dataset_graph_dim6', samples_per_dim=7, dim=6, c_max=1.2, E_len=900, num_partition=10)
     free_coeff = dim_samples_step(samples_per_dim=7, dim=6, c_max=1.2)
     coeff = generate_full_coefficients(free_coeff)
-    generate_dataset('./Datasets/dataset_graph_dim6', coeff, Elen=512, contract_threshold=14, num_partition=10)
-
+    binary_coeff = np.where(np.array(free_coeff) != 0, 1, 0)
+    from .post import hash_labels
+    label = hash_labels(binary_coeff, 2)
+    generate_dataset('./Datasets/dataset_graph_dim6', coeff_matrix=coeff, labels=label)
 
 
 
 
 # # Generate to a single file
-# def generate_dataset_graph(file_name, samples_per_dim=7, dim=4, c_max=1.2, Elen=256):
+# def generate_dataset_graph(file_name, samples_per_dim=7, dim=4, c_max=1.2, E_len=256):
 #     # Generate all combinations of coefficients
 #     values = list(np.linspace(-c_max, c_max, samples_per_dim))
 #     combinations = list(itertools.product(values, repeat=dim))
@@ -181,7 +185,7 @@ if __name__ == '__main__':
 #         if dim == 6:
 #             c = [1, comb[0], comb[1], comb[2], 0, comb[3], comb[4], comb[5], 1]
 #         Eauto = auto_Emaxes(c, N=40, pbc=False)
-#         graph = spectral_graph(c, Emax=Eauto, Elen=Elen)
+#         graph = spectral_graph(c, Emax=Eauto, E_len=E_len)
 #         graphs.append(graph)
 #         labels.append(comb)
     
