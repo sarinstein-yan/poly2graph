@@ -231,7 +231,7 @@ class ExplanationSummary():
         '''
         if ax is None:
             fig, ax = plt.subplots(1, 3, figsize=(9,3))
-        emax = self.pygG.Emax.numpy()[0]
+        emax = self.pygG.E_max.numpy()[0]
 
         # plot 0: DOS
         img = PosGoL(spectral_potential(

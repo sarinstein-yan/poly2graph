@@ -6,7 +6,7 @@
 > Topological physics is one of the most dynamic and rapidly advancing fields in modern physics. Conventionally, topological classification focuses on eigenstate windings, a concept central to Hermitian topological lattices (e.g., topological insulators). Beyond such notion of topology, we unravel a distinct and diverse graph topology emerging in non-Hermitian systems' energy spectra, featuring a kaleidoscope of exotic shapes like stars, kites, insects, and braids. The spectral graph solely depends on the algebraic form of characteristic polynomial.
 
 <p align="center">
-    <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/SGs_demo.png" width="600" />
+    <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/SGs_demo.png" width="800" />
 </p>
 
 `GnLTransformer` is an explainable graph neural network that integrates multi-head attention mechanism and leverages line graphs as dual channels to explicitly capture higher-order relationships beyond node-node interactions.
