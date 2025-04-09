@@ -169,14 +169,12 @@ class SpectralGraph:
         multiplying the polynomial by the appropriate power of z to get 
         a standard polynomial form in z.
         """
+        z = self.z
         # Treat E as constant and z as variable
-        Poly_z_bigen = Poly(self.ChP.as_expr(), self.z, 1/self.z)
-        self.poly_p = Poly_z_bigen.degree(1/self.z)
-        self.poly_q = Poly_z_bigen.degree(self.z)
-        Poly_z = Poly(
-            sp.expand(self.ChP.as_expr() * self.z**self.poly_p),
-            self.z
-        )
+        Poly_z_bigen = Poly(self.ChP.as_expr(), z, 1/z)
+        self.poly_p = Poly_z_bigen.degree(1/z)
+        self.poly_q = Poly_z_bigen.degree(z)
+        Poly_z = Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
         self.Poly_z_coeff = Poly_z.all_coeffs()
         # Companion matrix of P(E)(z) for efficient root finding
         self.companion_E = sp.Matrix.companion(Poly_z.monic()).applyfunc(sp.expand)
@@ -209,7 +207,7 @@ class SpectralGraph:
         H = H_1D_batch_from_hop_dict(hop_dict, N, pbc, param_dict)
         return H
 
-    def _spectral_boundaries(self) -> None:
+    def _spectral_boundaries(self, pad_factor = 0.05) -> None:
         """
         Estimate a bounding circle and square around the spectrum in the complex plane
         by diagonalizing a moderate-size finite chain Hamiltonian.
@@ -223,7 +221,6 @@ class SpectralGraph:
         E = np.linalg.eigvals(finite_chain)
 
         # dilate the boundary for safety
-        pad_factor = 0.05
         re_min, re_max = np.min(E.real), np.max(E.real)
         re_radius, re_center = (re_max - re_min)/2, (re_max + re_min)/2
         im_min, im_max = np.min(E.imag), np.max(E.imag)
@@ -312,13 +309,104 @@ class SpectralGraph:
         phi = spectral_potential(roots, coeff_arr, self.poly_q, method=method)
         return phi
 
+    @staticmethod
+    def _compute_masks(binary, dilation_radius=2):
+        """
+        Compute masks for the binary image and its dilation.
+        
+        Args:
+            binary (np.ndarray): Binary mask of the spectral region.
+            dilation_radius (int, optional): Radius for dilation. Defaults to 2.
+            
+        Returns:
+            tuple: (mask1, mask0, mask1_), where mask1 is the mask of the binary region,
+                  mask0 is the mask of the complement, and mask1_ is the mask of the
+                  dilated binary region.
+        """
+        mask1 = np.where(binary)
+        mask0 = np.where(~binary)
+        dilated = dilation(binary, disk(dilation_radius))
+        mask1_ = np.where(dilated)
+        return mask1, mask0, mask1_
+    
+    @staticmethod
+    def _compute_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement):
+        """
+        Compute a threshold for the enhanced resolution ridge image.
+        
+        Args:
+            ridge (np.ndarray): Ridge image at the original resolution.
+            ridge_block (np.ndarray): Ridge image blocks at the enhanced resolution.
+            mask1 (tuple): Mask of the binary region.
+            mask0 (tuple): Mask of the complement region.
+            resolution_enhancement (int): Factor by which resolution was enhanced.
+            
+        Returns:
+            float: Threshold for the enhanced resolution ridge image.
+        """
+        weights = np.array([
+            ridge_block[mask1].size, 
+            ridge[mask0].size * resolution_enhancement**2
+        ])
+        means = np.array([
+            np.mean(ridge_block[mask1]),
+            np.mean(ridge[mask0])
+        ])
+        threshold = np.dot(weights, means) / np.sum(weights)
+        return threshold
+    
+    def _enhance_resolution(self, E_box, phi, ridge, binary, resolution, resolution_enhancement, method, device, DOS_filter_kwargs):
+        """
+        Enhance the resolution of the spectral images in regions near the spectral boundary.
+        
+        Args:
+            E_box (np.ndarray): Spectral box boundaries.
+            phi (np.ndarray): Spectral potential at original resolution.
+            ridge (np.ndarray): Ridge image at original resolution.
+            binary (np.ndarray): Binary mask at original resolution.
+            resolution (int): Original resolution.
+            resolution_enhancement (int): Factor by which to enhance resolution.
+            method (str): Method for computing spectral potential.
+            device (str): TensorFlow device.
+            DOS_filter_kwargs (dict): Parameters for DOS filtering.
+            
+        Returns:
+            tuple: (phi_, ridge_, binary_), the enhanced versions of the spectral images.
+        """
+        enhanced_resolution = resolution * resolution_enhancement
+        E_real_ = np.linspace(*E_box[:2], enhanced_resolution)
+        E_imag_ = np.linspace(*E_box[2:], enhanced_resolution)
+        E_split = E_real_ + 1j * E_imag_[:, None]
+        
+        mask1, mask0, mask1_ = self._compute_masks(binary)
+
+        E_block = view_as_blocks(E_split, (resolution_enhancement, resolution_enhancement))
+        masked_E_block = E_block[mask1_]
+
+        split_kernel = np.ones((resolution_enhancement, resolution_enhancement))
+        phi_ = np.kron(phi, split_kernel)
+        phi_block = view_as_blocks(phi_, (resolution_enhancement, resolution_enhancement))
+        phi_dense = self.spectral_potential(masked_E_block, method=method, device=device)
+        phi_block[mask1_] = phi_dense
+
+        ridge_ = PosGoL(phi_, **DOS_filter_kwargs)
+        ridge_block = view_as_blocks(ridge_, (resolution_enhancement, resolution_enhancement))
+        ridge_block[mask0] = 0
+
+        threshold = self._compute_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement)
+        binary_ = ridge_ > threshold
+        binary_block = view_as_blocks(binary_, (resolution_enhancement, resolution_enhancement))
+        binary_block[mask0] = 0
+
+        return phi_, ridge_, binary_
+    
     def spectral_images(
         self,
         resolution: int = 256,
         resolution_enhancement: int = 4,
         device: str = '/cpu:0',
         method: str = 'ronkin',
-        DOS_filter_kwargs: Optional[dict] = None
+        DOS_filter_kwargs: Optional[dict] = {}
     ) -> tuple:
         """
         Create images of the spectral potential, a filtered (DOS-like) image, 
@@ -338,14 +426,11 @@ class SpectralGraph:
             tuple: (phi, ridge, binary), or the enhanced versions (phi_, ridge_, binary_) 
             if `resolution_enhancement > 1`.
         """
-        if DOS_filter_kwargs is None:
-            DOS_filter_kwargs = {}
-
         E_box = self.spectral_square
-        E_arr = (
-            np.linspace(*E_box[:2], resolution)
-            + 1j*np.linspace(*E_box[2:], resolution)[:, None]
-        )
+
+        E_real = np.linspace(*E_box[:2], resolution)
+        E_imag = np.linspace(*E_box[2:], resolution)
+        E_arr = E_real + 1j * E_imag[:, None]
 
         phi = self.spectral_potential(E_arr, method=method, device=device)
         if method == 'ronkin':
@@ -357,43 +442,12 @@ class SpectralGraph:
         if resolution_enhancement <= 1 or resolution_enhancement is None:
             return phi, ridge, binary
         
-        # resolution enhancement on a filtered region
-        mask1 = np.where(binary)
-        mask0 = np.where(~binary)
-        dilated = dilation(binary, disk(2))
-        mask1_ = np.where(dilated)
-        
-        enhanced_resolution = resolution * resolution_enhancement
-        E_split = (
-            np.linspace(*E_box[:2], enhanced_resolution)
-            + 1j*np.linspace(*E_box[2:], enhanced_resolution)[:, None]
+        # Apply resolution enhancement
+        phi_, ridge_, binary_ = self._enhance_resolution(
+            E_box, phi, ridge, binary, resolution, resolution_enhancement, 
+            method, device, DOS_filter_kwargs
         )
-        E_block = view_as_blocks(E_split, (resolution_enhancement, resolution_enhancement))
-        masked_E_block = E_block[mask1_]
-
-        split_kernel = np.ones((resolution_enhancement, resolution_enhancement))
-        phi_ = np.kron(phi, split_kernel)
-        phi_block = view_as_blocks(phi_, (resolution_enhancement, resolution_enhancement))
-        phi_dense = self.spectral_potential(masked_E_block, method=method, device=device)
-        phi_block[mask1_] = phi_dense
-
-        ridge_ = PosGoL(phi_, **DOS_filter_kwargs)
-        ridge_block = view_as_blocks(ridge_, (resolution_enhancement, resolution_enhancement))
-        ridge_block[mask0] = 0
-
-        weights = np.array([
-            ridge_block[mask1].size, 
-            ridge[mask0].size * resolution_enhancement**2
-        ])
-        means = np.array([
-            np.mean(ridge_block[mask1]),
-            np.mean(ridge[mask0])
-        ])
-        threshold = np.dot(weights, means) / np.sum(weights)
-        binary_ = ridge_ > threshold
-        binary_block = view_as_blocks(binary_, (resolution_enhancement, resolution_enhancement))
-        binary_block[mask0] = 0
-
+        
         return phi_, ridge_, binary_
 
     def spectral_graph(
@@ -403,8 +457,8 @@ class SpectralGraph:
         device: str = '/cpu:0',
         method: str = 'ronkin',
         short_edge_threshold: Optional[float] = 20,
-        skeleton2graph_kwargs: Optional[dict] = None,
-        DOS_filter_kwargs: Optional[dict] = None,
+        skeleton2graph_kwargs: Optional[dict] = {},
+        DOS_filter_kwargs: Optional[dict] = {},
         magnify: float = 1.0
     ) -> nxGraph:
         """
@@ -435,11 +489,6 @@ class SpectralGraph:
         Returns:
             nxGraph: A (NetworkX) graph representation of the spectral skeleton.
         """
-        if skeleton2graph_kwargs is None:
-            skeleton2graph_kwargs = {}
-        if DOS_filter_kwargs is None:
-            DOS_filter_kwargs = {}
-
         phi, ridge, binary = self.spectral_images(
             resolution=resolution,
             resolution_enhancement=resolution_enhancement,
