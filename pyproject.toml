@@ -20,7 +20,7 @@ keywords = [
 ]
 readme = {"file" = "README.md", "content-type" = "text/markdown"}
 license = {file = "LICENSE"}
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
@@ -29,15 +29,15 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
+    "sympy",
     "numba",
     "networkx",
     "scikit-image",
     "scikit-learn",
-    "gdown"
 ]
 
 [project.optional-dependencies]
-require = ["torch", "torch_geometric", "tensorflow"]  # packages to install manually
+require = ["tensorflow"]  # packages to install manually
 
 [project.urls]
 Homepage = "https://github.com/sarinstein-yan/poly2graph"

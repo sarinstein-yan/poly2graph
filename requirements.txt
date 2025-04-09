@@ -1,11 +1,8 @@
 numpy
-matplotlib
+sympy
 numba
+matplotlib
 networkx
 scikit-image
 scikit-learn
-pandas
 tqdm
-sympy
-torchmetrics
-gdown
