@@ -107,6 +107,7 @@ class SpectralGraph:
 
         self._companion_E()
         self._spectral_boundaries()
+        self._image_cache = {}
 
     def _init_ChP(self) -> None:
         """
@@ -406,7 +407,8 @@ class SpectralGraph:
         resolution_enhancement: int = 4,
         device: str = '/cpu:0',
         method: str = 'ronkin',
-        DOS_filter_kwargs: Optional[dict] = {}
+        DOS_filter_kwargs: Optional[dict] = {},
+        cache: bool = True
     ) -> tuple:
         """
         Create images of the spectral potential, a filtered (DOS-like) image, 
@@ -420,12 +422,22 @@ class SpectralGraph:
             method (str, optional): Method for computing spectral potential. 
                 Defaults to 'ronkin'.
             DOS_filter_kwargs (dict, optional): Keyword arguments for `PosGoL` 
-                filter or similar. Defaults to None.
+                filter or similar. Defaults to {}.
+            cache (bool, optional): Whether to use cached images if available. 
+                Defaults to True.
 
         Returns:
             tuple: (phi, ridge, binary), or the enhanced versions (phi_, ridge_, binary_) 
             if `resolution_enhancement > 1`.
-        """
+        """        
+        # Create a unique key for caching
+        cache_key = (resolution, resolution_enhancement, method, str(DOS_filter_kwargs))
+        
+        # Check cache if requested
+        if cache and cache_key in self._image_cache:
+            return self._image_cache[cache_key]
+        
+        # If not in cache or not using cache, compute the images
         E_box = self.spectral_square
 
         E_real = np.linspace(*E_box[:2], resolution)
@@ -439,16 +451,69 @@ class SpectralGraph:
             ridge = phi
 
         binary = ridge > np.mean(ridge)
+        
+        result = None
         if resolution_enhancement <= 1 or resolution_enhancement is None:
-            return phi, ridge, binary
+            result = (phi, ridge, binary)
+        else:
+            # Apply resolution enhancement
+            phi_, ridge_, binary_ = self._enhance_resolution(
+                E_box, phi, ridge, binary, resolution, resolution_enhancement, 
+                method, device, DOS_filter_kwargs
+            )
+            result = (phi_, ridge_, binary_)
         
-        # Apply resolution enhancement
-        phi_, ridge_, binary_ = self._enhance_resolution(
-            E_box, phi, ridge, binary, resolution, resolution_enhancement, 
-            method, device, DOS_filter_kwargs
-        )
+        # Cache the result
+        if cache:
+            self._image_cache[cache_key] = result
+            
+        return result
+
+    def _recover_energy_coordinates(
+        self, 
+        graph: nxGraph, 
+        scale: float, 
+        center_offset: np.ndarray, 
+        magnify: float = 1.0
+    ) -> nxGraph:
+        """
+        Process the graph node positions and edge weights to convert from pixel coordinates 
+        to energy values.
         
-        return phi_, ridge_, binary_
+        Args:
+            graph (nxGraph): The graph to process
+            scale (float): The scale factor to convert from pixel units to energy units
+            center_offset (np.ndarray): The offset for centering
+            magnify (float): Factor to scale positions and weights for aesthetics
+            
+        Returns:
+            nxGraph: The processed graph
+        """
+        if magnify <= 0:
+            magnify = 1.0
+            
+        for node in graph.nodes(data=True):
+            if 'pos' in node[1]:
+                pos = np.asarray(node[1]['pos'], dtype=np.float32)
+                # Recover the (x, y) coordinates from the 2D array indices
+                new_pos = (pos[::-1] - center_offset) * scale + self.spectral_center
+                node[1]['pos'] = new_pos * magnify
+            if 'pts' in node[1]:
+                pts = np.asarray(node[1]['pts'], dtype=np.float32)
+                new_pts = (pts[..., ::-1] - center_offset) * scale + self.spectral_center
+                node[1]['pts'] = new_pts * magnify
+
+        for edge in graph.edges(data=True):
+            if 'weight' in edge[2]:
+                weight = np.asarray(edge[2]['weight'], dtype=np.float32)
+                new_weight = weight * scale
+                edge[2]['weight'] = new_weight * magnify
+            if 'pts' in edge[2]:
+                pts = np.asarray(edge[2]['pts'], dtype=np.float32)
+                new_pts = (pts[..., ::-1] - center_offset) * scale + self.spectral_center
+                edge[2]['pts'] = new_pts * magnify
+                
+        return graph
 
     def spectral_graph(
         self,
@@ -459,7 +524,8 @@ class SpectralGraph:
         short_edge_threshold: Optional[float] = 20,
         skeleton2graph_kwargs: Optional[dict] = {},
         DOS_filter_kwargs: Optional[dict] = {},
-        magnify: float = 1.0
+        magnify: float = 1.0,
+        cache: bool = True
     ) -> nxGraph:
         """
         Build a graph representation from the complex-energy spectral geometry.
@@ -480,25 +546,31 @@ class SpectralGraph:
                 than this threshold (in pixel units of the final image) are 
                 added and contracted to reduce graph noise. Defaults to 20.
             skeleton2graph_kwargs (Optional[dict], optional): Additional kwargs for 
-                the skeleton-to-graph conversion. Defaults to None.
+                the skeleton-to-graph conversion. Defaults to {}.
             DOS_filter_kwargs (Optional[dict], optional): Additional kwargs for the 
-                DOS or ridge filtering method. Defaults to None.
+                DOS or ridge filtering method. Defaults to {}.
             magnify (float, optional): A factor to scale the positions and edge weights 
                 in the final graph for numeric stability or aesthetics. Defaults to 1.0.
+            cache (bool, optional): Whether to use cached images if available.
+                Defaults to True.
 
         Returns:
             nxGraph: A (NetworkX) graph representation of the spectral skeleton.
         """
+        # Get spectral images (from cache if available)
         phi, ridge, binary = self.spectral_images(
             resolution=resolution,
             resolution_enhancement=resolution_enhancement,
             device=device,
             method=method,
-            DOS_filter_kwargs=DOS_filter_kwargs
+            DOS_filter_kwargs=DOS_filter_kwargs,
+            cache=cache
         )
-        # obtain graph skeleton
+        
+        # Obtain graph skeleton
         ske = skeletonize(binary, method='lee')
-        # construct skeleton graph
+        
+        # Construct skeleton graph
         graph = skeleton2graph(
             ske,
             Potential_image=phi.astype(np.float32),
@@ -506,38 +578,24 @@ class SpectralGraph:
             **skeleton2graph_kwargs
         )
 
-        ### post-process the extracted graph
-        # merge close nodes and short edges
+        ### Post-process the extracted graph
+        # Merge close nodes and short edges
         if short_edge_threshold is not None and short_edge_threshold > 0:
             graph = add_edges_within_threshold(graph, short_edge_threshold)
             graph = contract_close_nodes(graph, short_edge_threshold)
 
-        # convert the graph attributes from pixel index to energy values
+        # Calculate parameters for coordinate transformation
         final_res = resolution * resolution_enhancement
-        cen = self.spectral_center
         scale = self.spectral_radius * 2 / final_res
-        cen_ = np.array([final_res - 1, final_res - 1]) / 2  # offset for 0-based indexing
+        center_offset = np.array([final_res - 1, final_res - 1]) / 2  # offset for 0-based indexing
 
-        if magnify is not None and magnify > 0:
-            for node in graph.nodes(data=True):
-                if 'pos' in node[1]:
-                    pos = np.asarray(node[1]['pos'], dtype=np.float32)
-                    # Recover the (x, y) coordinates from the 2D array indices
-                    new_pos = (pos[::-1] - cen_) * scale + cen
-                    node[1]['pos'] = new_pos * magnify
-                if 'pts' in node[1]:
-                    pts = np.asarray(node[1]['pts'], dtype=np.float32)
-                    new_pts = (pts[..., ::-1] - cen_) * scale + cen
-                    node[1]['pts'] = new_pts * magnify
-
-            for edge in graph.edges(data=True):
-                if 'weight' in edge[2]:
-                    weight = np.asarray(edge[2]['weight'], dtype=np.float32)
-                    new_weight = weight * scale
-                    edge[2]['weight'] = new_weight * magnify
-                if 'pts' in edge[2]:
-                    pts = np.asarray(edge[2]['pts'], dtype=np.float32)
-                    new_pts = (pts[..., ::-1] - cen_) * scale + cen
-                    edge[2]['pts'] = new_pts * magnify
+        # Process graph positions
+        graph = self._recover_energy_coordinates(graph, scale, center_offset, magnify)
 
         return graph
+        
+    def clear_cache(self):
+        """
+        Clear the cached spectral images.
+        """
+        self._image_cache = {}
