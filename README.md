@@ -11,11 +11,20 @@
 
 ## Features
 - **Poly2Graph**
-  1. Fast construction of spectral graph from and one-dimensional models
-  2. Support for generic one-band and multi-band models
-  3. Adaptive resolution to reduce floating operation cost and memory usage
-  4. Automatic spectral boundary inference
-  5. Convert a skeleton image to its graph representation
+  1. High-performance
+     - Fast construction of spectral graph from any one-dimensional models
+     - Adaptive resolution to reduce floating operation cost and memory usage
+     - Computation bottleneck can be accelerated on GPU, TPU, and any other devices that `tensorflow` supports
+  2. Cover generic topological lattices
+     - Support generic one-band and multi-band models
+     - Flexible multiple input choices, be they characteristic polynomials or Bloch Hamiltonians; formats include strings, `sympy`'s `Poly`, and `Matrix`
+  3. Automatic and Robust
+     - By default, no hyper-parameters are needed. Just input the characteristic of your model and `poly2graph` handles the rest
+     - Automatic spectral boundary inference
+     - Relatively robust on multiband models that are prone to "component fragmentation"
+  4. Helper functionalities generally useful
+     - `skeleton2graph` module: Convert a skeleton image to its graph representation
+     - `hamiltonian` module: Conversion among different Hamiltonian representations and efficient computation of a range of properties
   <!-- 6. Dataset generation
   1. Visualization of spectral potential, density of states, and spectral graph -->
 
@@ -116,7 +125,7 @@ sg = p2g.SpectralGraph(char_poly_str, k=k, z=z, E=E)
 sg.ChP
 ```
 
-<span style="color:#d73a49;font-weight:bold">>>></span> $\text{Poly}(z^{4}-z-\frac{1}{z^{2}}-E,z,\frac{1}{z},E,\mathbb{Z})$
+<span style="color:#d73a49;font-weight:bold">>>></span> $\text{Poly}{\left( z^{4} - z -\frac{1}{z^{2}} - E, ~ z, \frac{1}{z}, E, ~ domain=\mathbb{Z} \right)}$
 
 ---
 **Bloch Hamiltonian**:
@@ -293,7 +302,7 @@ sg_multi = p2g.SpectralGraph("z**2 + 1/z**2 + E*z - E**4", k, z, E)
 sg_multi.ChP
 ```
 
-<span style="color:#d73a49;font-weight:bold">>>></span> $\text{Poly}{\left( z^{2} + zE + \frac{1}{z^{2}} - E^{4}, z, \frac{1}{z}, E, domain=\mathbb{Z} \right)}$
+<span style="color:#d73a49;font-weight:bold">>>></span> $\text{Poly}{\left( z^{2} + zE + \frac{1}{z^{2}} - E^{4}, ~ z, \frac{1}{z}, E, ~ domain=\mathbb{Z} \right)}$
 
 ---
 **Bloch Hamiltonian**:
