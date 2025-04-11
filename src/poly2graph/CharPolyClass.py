@@ -8,19 +8,19 @@ from sympy.polys.polytools import Poly
 from skimage.morphology import skeletonize, dilation, binary_closing, disk
 from skimage.util import view_as_blocks
 
-from .skeleton2graph import skeleton2graph, skeleton2graph_batch
-from .spectral_graph import (
+from poly2graph.skeleton2graph import skeleton2graph, skeleton2graph_batch
+from poly2graph.spectral_graph import (
     PosGoL,
     spectral_potential,
     add_edges_within_threshold,
     contract_close_nodes
 )
-from .hamiltonian import (
+from poly2graph.hamiltonian import (
     hk2hz_1d, hz2hk_1d,
     expand_hz_as_hop_dict_1d,
     H_1D_batch_from_hop_dict
 )
-from .util import companion_batch, kron_batch, eig_batch, eigvals_batch
+from poly2graph.util import companion_batch, kron_batch, eig_batch, eigvals_batch
 
 from numpy.typing import ArrayLike
 from typing import Union, Optional, Callable, Iterable, TypeVar, Dict, List, Tuple, Sequence
