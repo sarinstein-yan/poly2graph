@@ -17,7 +17,7 @@ from .spectral_graph import (
     spectral_potential,
 )
 from .SpectralGraph import SpectralGraph
-from .util import companion_batch, kron_batch, eig_batch
+from .util import companion_batch, kron_batch, eig_batch, eigvals_batch
 from .vis import draw_spectral_graph, mark_graph_skeleton
 
 __version__ = '0.1.0'
@@ -42,7 +42,8 @@ __all__ = [
 
     'SpectralGraph',
 
-    'companion_batch', 'kron_batch', 'eig_batch',
+    'companion_batch', 'kron_batch', 
+    'eig_batch', 'eigvals_batch',
     
     'draw_spectral_graph', 'mark_graph_skeleton'
 ]

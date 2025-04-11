@@ -136,3 +136,45 @@ def eig_batch(array_of_matrices, device='/CPU:0', is_hermitian=False):
     # tf.keras.backend.clear_session()
 
     return eigvals_np, eigvecs_np
+
+
+def eigvals_batch(array_of_matrices, device='/CPU:0', is_hermitian=False):
+    """
+    Compute the eigenvalues for a batch of matrices using TensorFlow.
+
+    This function computes the eigenvalues for a batch of matrices provided as an array.
+    It supports both Hermitian matrices (using tf.linalg.eigh) and general matrices (using tf.linalg.eig).
+    For general matrices, it improves numerical stability by setting near-zero entries (below a tolerance)
+    to zero before computing the eigenvalues.
+
+    Parameters
+    ----------
+    array_of_matrices : array-like
+        An array or tensor of shape (..., N, N) representing a batch of square matrices.
+    device : str or tf.device
+        The TensorFlow device (e.g., '/GPU:0' or '/CPU:0') on which the computation is performed.
+    is_hermitian : bool, optional
+        Flag indicating whether the input matrices are Hermitian. If True, uses tf.linalg.eigh.
+        Otherwise, uses tf.linalg.eig with a numerical stability threshold. Default is False.
+
+    Returns
+    -------
+    eigvals_np : np.ndarray
+        A numpy array of eigenvalues with shape matching the batch dimensions and an extra dimension 
+        for eigenvalues.
+
+    Raises
+    ------
+    ValueError
+        If the tensor's dtype is not one of [tf.float32, tf.float64, tf.complex64, tf.complex128].
+
+    Notes
+    -----
+    - For non-Hermitian matrices, the tolerance for setting near-zero values is chosen based on the data type:
+      1e-14 for complex dtypes (tf.complex64, tf.complex128) and 1e-6 for float dtypes (tf.float32, tf.float64).
+    - The resulting eigenvalues are converted to numpy arrays, and the computation is performed on the specified device.
+    """
+    
+    eigvals_np, _ = eig_batch(array_of_matrices, device=device, is_hermitian=is_hermitian)
+    
+    return eigvals_np

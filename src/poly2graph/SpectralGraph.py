@@ -23,8 +23,7 @@ from .hamiltonian import (
 from .util import companion_batch
 
 from numpy.typing import ArrayLike
-from typing import Union, Optional, Callable, Iterable, TypeVar
-
+from typing import Union, Optional, Callable, Iterable, TypeVar, Dict, List, Tuple, Sequence
 nxGraph = TypeVar('nxGraph', nx.Graph, nx.MultiGraph, nx.DiGraph, nx.MultiDiGraph)
 
 
@@ -184,8 +183,7 @@ class SpectralGraph:
         self,
         N: int = 40,
         max_dim: int = 150,
-        pbc: bool = False,
-        param_dict: dict = {}
+        pbc: bool = False
     ) -> np.ndarray:
         """
         Construct a finite real-space Hamiltonian of size (num_bands*N) x (num_bands*N).
@@ -205,7 +203,7 @@ class SpectralGraph:
         if self.num_bands * N > max_dim:
             N = max_dim // self.num_bands
         hop_dict = expand_hz_as_hop_dict_1d(self.h_z, self.z)
-        H = H_1D_batch_from_hop_dict(hop_dict, N, pbc, param_dict)
+        H = H_1D_batch_from_hop_dict(hop_dict, N, pbc)
         return H
 
     def _spectral_boundaries(self, pad_factor = 0.05) -> None:
