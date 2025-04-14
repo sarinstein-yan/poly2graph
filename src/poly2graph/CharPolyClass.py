@@ -1,12 +1,14 @@
 import numpy as np
+import sympy as sp
 import networkx as nx
 import tensorflow as tf
 
-import sympy as sp
-from sympy.polys.polytools import Poly
-
 from skimage.morphology import skeletonize, dilation, binary_closing, disk
 from skimage.util import view_as_blocks
+
+from joblib import Parallel, delayed
+from functools import partial
+import warnings
 
 from poly2graph.skeleton2graph import skeleton2graph, skeleton2graph_batch
 from poly2graph.spectral_graph import (
@@ -23,43 +25,51 @@ from poly2graph.hamiltonian import (
 from poly2graph.util import companion_batch, kron_batch, eig_batch, eigvals_batch
 
 from numpy.typing import ArrayLike
-from typing import Union, Optional, Callable, Iterable, TypeVar, Dict, List, Tuple, Sequence
+from typing import Union, Optional, Callable, Dict, List, Tuple, Iterable, Sequence, TypeVar
 nxGraph = TypeVar('nxGraph', nx.Graph, nx.MultiGraph, nx.DiGraph, nx.MultiDiGraph)
 
 
 class CharPolyClass:
     def __init__(
         self,
-        characteristic: Union[Poly, str, sp.Matrix],
+        characteristic: Union[sp.Poly, str, sp.Matrix],
         k: sp.Symbol,
         z: sp.Symbol,
-        E: sp.Symbol, 
+        E: sp.Symbol,
         param_dict: Optional[Dict[sp.Symbol, ArrayLike]] = {},
-        device : Optional[str] = '/CPU:0',
     ) -> None:
         
         self.k, self.z, self.E = k, z, E
-        self.param_dict = param_dict
-        self.params = tuple(param_dict.keys())
+        self.params = list(param_dict.keys())
+        self.param_dict = {s: np.asarray(v) for s, v in param_dict.items()} # Ensure arrays
 
         # Check if all parameter values have the same shape
-        batch_shapes = [np.shape(v) for v in param_dict.values()]
-        assert all(shape == batch_shapes[0] for shape in batch_shapes), "Parameter values must have the same shape."
-        self.batch_shape = batch_shapes[0] if batch_shapes else ()
+        batch_shapes = [v.shape for v in self.param_dict.values()]
+        if not batch_shapes:
+             self.batch_shape = ()
+             self.num_samples = 1
+        else:
+            assert all(shape == batch_shapes[0] for shape in batch_shapes), \
+                "Parameter values must have the same shape."
+            self.batch_shape = batch_shapes[0]
+            self.num_samples = int(np.prod(self.batch_shape))
+        
+        print(f"Hamiltonian Parameters: {self.params}; "
+              f"batch shape {self.batch_shape}; "
+              f"{self.num_samples} total instances.")
 
-        print(f"Hamiltonian Parameters are {self.params} with batch shape {self.batch_shape}")
-
-        if isinstance(characteristic, Poly):
+        # Initialize based on characteristic type
+        if isinstance(characteristic, sp.Poly):
             self.ChP = characteristic
-            self._init_ChP()
+            self._init_from_ChP()
         elif isinstance(characteristic, str):
-            param_maps = {str(k): k for k in self.params}
+            param_maps = {k.name: k for k in self.params}
             expr = sp.sympify(characteristic, locals={'z': z, 'E': E, **param_maps})
             assert {E, z}.issubset(expr.free_symbols), (
-                f"ChP must include {E} AND {z} as free symbols"
+                f"ChP string must include {E} AND {z} as free symbols"
             )
-            self.ChP = Poly(expr, z, 1/z, E)
-            self._init_ChP()
+            self.ChP = sp.Poly(expr, z, 1/z, E)
+            self._init_from_ChP()
         elif isinstance(characteristic, sp.Matrix):
             free_sym = characteristic.free_symbols
             if self.k in free_sym and self.z not in free_sym:
@@ -70,55 +80,97 @@ class CharPolyClass:
                 self.h_k = hz2hk_1d(self.h_z, k, z)
             else:
                 raise ValueError(
-                    f"Characteristic polynomial must include {k} XOR {z} as a free symbol"
+                    f"Characteristic matrix must include {k} XOR {z} as a free symbol"
                 )
-            self._init_bloch()
+            self._init_from_bloch()
         else:
-            raise ValueError("Characteristic polynomial must be a Poly, string, or Matrix.")
+            raise ValueError("Characteristic must be a sympy Poly, string, or Matrix.")
 
-        self._companion_E()
-        self._spectral_boundaries(device)
+        # Prepare coefficients and companion matrix for z-polynomial
+        self._prepare_poly_z()
 
-    def _init_ChP(self) -> None:
+    def _init_from_ChP(self) -> None:
+        """Initialize attributes when starting from a Characteristic Polynomial."""
         k, z, E = self.k, self.z, self.E
-        assert {E, z}.issubset(self.ChP.free_symbols), (
+        assert {E, z}.issubset(self.ChP.free_symbols), \
             "ChP must include E and z as free symbols"
-        )
-        assert set(self.ChP.gens) == {z, 1/z, E}, (
-            "ChP's generators must be {z, 1/z, E}"
-        )
+        # Generators check, hoppings in both directions should exist
+        assert set(self.ChP.gens) == {z, 1/z, E}, \
+            f"ChP's generators must be {{z, 1/z, E}}, got {self.ChP.gens}"
 
-        # Treat z as constant and E as variable
-        Poly_E = Poly(self.ChP.as_expr(), E)
+        # Treat z as constant and E as variable to find num_bands and h_z
+        Poly_E = sp.Poly(self.ChP.as_expr(), E)
+        monic_Poly_E = Poly_E.monic()
         self.Poly_E_coeff = Poly_E.all_coeffs()
         self.num_bands = Poly_E.degree()
 
-        # Bloch Hamiltonian
+        # Derive Bloch Hamiltonian h_z (and h_k) from ChP
+        if self.num_bands < 1:
+            raise ValueError("Characteristic polynomial must be at least one-band.")
         if self.num_bands == 1:
-            coeff = Poly_E.monic().all_coeffs()[-1]
-            self.h_z = sp.Matrix([-coeff])
+            self.h_z = sp.Matrix([sp.expand(monic_Poly_E.TC())]) # Tailing coefficient
         else:
-            self.h_z = sp.Matrix.companion(Poly_E.monic()).applyfunc(sp.expand)
+            self.h_z = sp.Matrix.companion(monic_Poly_E).applyfunc(sp.expand)
+
         self.h_k = hz2hk_1d(self.h_z, k, z)
+        print(f"Derived Bloch Hamiltonian `h_z` with {self.num_bands} bands.")
 
-    def _init_bloch(self) -> None:
+    def _init_from_bloch(self) -> None:
+        """Initialize attributes when starting from a Bloch Hamiltonian Matrix."""
         z, E = self.z, self.E
-        # Characteristic polynomial
-        Poly_E = self.h_z.charpoly(E)
-        self.Poly_E_coeff = Poly_E.all_coeffs()
-        self.num_bands = Poly_E.degree()
-        self.ChP = Poly(Poly_E.as_expr(), z, 1/z, E)
+        # Calculate Characteristic polynomial from h_z
+        # NOTE: charpoly() creates a new PurePoly object with dummy variables.
+        Poly_E_pure = self.h_z.charpoly(E)
+        self.Poly_E_coeff = Poly_E_pure.all_coeffs()
+        self.num_bands = Poly_E_pure.degree()
+        # Replace the dummy variable generated by charpoly with our predefined E
+        Poly_E_expr = Poly_E_pure.as_expr().xreplace({Poly_E_pure.gens[0]: E})
+        # Define the full ChP including z dependencies
+        self.ChP = sp.Poly(Poly_E_expr, z, 1/z, E) # Define gens explicitly
+        print(f"Derived Characteristic polynomial `ChP` with {self.num_bands} bands.")
 
-    def _companion_E(self) -> None:
+    def _prepare_poly_z(self) -> None:
+        """Prepare coefficients and companion matrix for the polynomial in z."""
         z = self.z
         # Treat E as constant and z as variable
-        Poly_z_bigen = Poly(self.ChP.as_expr(), z, 1/z)
+        Poly_z_bigen = sp.Poly(self.ChP.as_expr(), z, 1/z)
+        # Right hopping range
         self.poly_p = Poly_z_bigen.degree(1/z)
+        # Left hopping range
         self.poly_q = Poly_z_bigen.degree(z)
-        Poly_z = Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
+        Poly_z = sp.Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
         self.Poly_z_coeff = Poly_z.all_coeffs()
         # Companion matrix of P(E)(z) for efficient root finding
-        self.companion_E = sp.Matrix.companion(Poly_z.monic()).applyfunc(sp.expand)
+        monic_Poly_z = Poly_z.monic()
+        self.companion_E = sp.Matrix.companion(monic_Poly_z).applyfunc(sp.expand)
+        # Lambdify coefficients for numerical evaluation later
+        self._lambdify_poly_z_coeffs()
+
+    def _lambdify_poly_z_coeffs(self):
+        """Create lambda functions for evaluating Poly_z coefficients."""
+        self.Poly_z_coeff_funcs = []
+        allowed_params_set = set(self.params)
+        allowed_all_set = allowed_params_set | {self.E}
+
+        # Prepare arguments for lambdify in the correct order
+        args_order = self.params + [self.E] # E always comes last
+
+        for i, expr in enumerate(self.Poly_z_coeff):
+            syms = expr.free_symbols
+            if not (syms <= allowed_all_set):
+                raise ValueError(f"Coefficient {i} contains invalid symbols: {syms - allowed_all_set}")
+
+            if not syms: # Constant
+                func = lambda *args, val=complex(expr): np.full(args[-1].shape, val) # args[-1] is E_array
+            elif syms == {self.E}: # Depends only on E
+                func = sp.lambdify(self.E, expr, modules=["numpy"])
+            elif syms <= allowed_params_set: # Depends only on params
+                 # Need to broadcast param values to match E_array shape later
+                 func = sp.lambdify(self.params, expr, modules=["numpy"])
+            else: # Depends on E and params
+                 func = sp.lambdify(args_order, expr, modules=["numpy"])
+
+            self.Poly_z_coeff_funcs.append({'func': func, 'syms': syms})
 
     def real_space_H(
         self,
@@ -155,7 +207,7 @@ class CharPolyClass:
             im_center - radius, im_center + radius
         ], axis=-1)
 
-    def _Poly_z_coeff_arr(self, E_array: ArrayLike) -> np.ndarray:
+    def _Poly_z_coeff_arr_from_E_arr(self, E_array: ArrayLike) -> np.ndarray:
         E_array = np.asarray(E_array)
         coeff_arr = np.zeros(
             (*E_array.shape, len(self.Poly_z_coeff)), dtype=np.complex128
@@ -170,26 +222,26 @@ class CharPolyClass:
                 raise ValueError("Poly_z_coeff must be a function of E only")
         return coeff_arr
 
-    def Poly_z_roots(
+    def Poly_z_roots_from_E_arr(
         self,
         E_array: ArrayLike,
         device: str = '/cpu:0'
     ) -> np.ndarray:
-        coeff_arr = self._Poly_z_coeff_arr(E_array)
+        coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
         companion_arr = companion_batch(coeff_arr)
         with tf.device(device):
             companion_tensor = tf.convert_to_tensor(companion_arr)
             roots = tf.linalg.eigvals(companion_tensor)
         return roots.numpy()
 
-    def spectral_potential(
+    def spectral_potential_from_E_arr(
         self,
         E_array: ArrayLike,
         method: str = 'ronkin',
         device: str = '/cpu:0'
     ) -> np.ndarray:
-        coeff_arr = self._Poly_z_coeff_arr(E_array)
-        roots = self.Poly_z_roots(E_array, device=device)
+        coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
+        roots = self.Poly_z_roots_from_E_arr(E_array, device=device)
         phi = spectral_potential(roots, coeff_arr, self.poly_q, method=method)
         return phi
 
@@ -228,7 +280,7 @@ class CharPolyClass:
         split_kernel = np.ones((resolution_enhancement, resolution_enhancement))
         phi_ = np.kron(phi, split_kernel)
         phi_block = view_as_blocks(phi_, (resolution_enhancement, resolution_enhancement))
-        phi_dense = self.spectral_potential(masked_E_block, method=method, device=device)
+        phi_dense = self.spectral_potential_from_E_arr(masked_E_block, method=method, device=device)
         phi_block[mask1_] = phi_dense
 
         ridge_ = PosGoL(phi_, **DOS_filter_kwargs)
@@ -256,7 +308,7 @@ class CharPolyClass:
         E_imag = np.linspace(*E_box[2:], resolution)
         E_arr = E_real + 1j * E_imag[:, None]
 
-        phi = self.spectral_potential(E_arr, method=method, device=device)
+        phi = self.spectral_potential_from_E_arr(E_arr, method=method, device=device)
         if method == 'ronkin':
             ridge = PosGoL(phi, **DOS_filter_kwargs)
         else:

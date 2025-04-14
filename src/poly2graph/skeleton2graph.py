@@ -2,7 +2,7 @@ import numpy as np
 import networkx as nx
 from numba import njit
 from typing import Optional, Union, List
-from multiprocessing.dummy import Pool as ThreadPool
+from joblib import Parallel, delayed
 
 # adapted from https://github.com/Image-Py/sknw
 
@@ -266,10 +266,10 @@ def skeleton2graph_batch(
     Potential_image: Optional[Union[np.ndarray, List[np.ndarray]]] = None,
     DOS_image: Optional[Union[np.ndarray, List[np.ndarray]]] = None,
     add_pts: bool = True,
-    num_threads: Optional[int] = None
+    num_workers: Optional[int] = None,
 ) -> List[Union[nx.Graph, nx.MultiGraph]]:
     """
-    Processes a batch of skeleton images into NetworkX graphs using multi-threading.
+    Processes a batch of skeleton images into NetworkX graphs using Joblib for parallelization.
     
     Parameters:
     -----------
@@ -292,8 +292,8 @@ def skeleton2graph_batch(
         Expected shape is (..., N, N) and the trailing dimensions must match those of skes.
     add_pts : bool, optional (default True)
         If True, includes all original skeleton points in the graph attributes.
-    num_threads : int, optional
-        The number of threads to use. If None, the pool defaults to the number of processors.
+    num_workers : int, optional
+        The number of threads to use. If None, all available cores are used.
     
     Returns:
     --------
@@ -304,12 +304,15 @@ def skeleton2graph_batch(
     ValueError:
         If the shapes of Potential_image or DOS_image do not match the shape of the skeleton images.
     """
+
     # Ensure skes is a NumPy array and check the shape.
     skes = np.asarray(skes)
     if skes.ndim < 2:
         raise ValueError("Input 'skes' must have at least 2 dimensions representing a 2D image.")
+    
     # Last two dimensions should be the image shape.
     image_shape = skes.shape[-2:]
+    
     # Flatten all batch dimensions into one.
     skes_list = skes.reshape(-1, *image_shape)
     n_images = skes_list.shape[0]
@@ -353,10 +356,12 @@ def skeleton2graph_batch(
     # Prepare the list of arguments.
     arg_list = list(zip(skes_list, pot_list, dos_list))
     
-    # Use a thread pool to process images concurrently.
-    pool = ThreadPool(num_threads) if num_threads is not None else ThreadPool()
-    graphs = pool.map(process_one, arg_list)
-    pool.close()
-    pool.join()
+    # Determine the number of jobs: use num_workers if provided, otherwise all available cores.
+    n_jobs = num_workers if num_workers is not None else -1
+    
+    # Use Joblib's Parallel to process images concurrently.
+    graphs = Parallel(n_jobs=n_jobs, prefer='threads')(
+        delayed(process_one)(args) for args in arg_list
+    )
     
     return graphs

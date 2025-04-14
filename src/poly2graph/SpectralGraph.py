@@ -1,9 +1,7 @@
 import numpy as np
+import sympy as sp
 import networkx as nx
 import tensorflow as tf
-
-import sympy as sp
-from sympy.polys.polytools import Poly
 
 from skimage.morphology import skeletonize, dilation, binary_closing, disk
 from skimage.util import view_as_blocks
@@ -36,7 +34,7 @@ class SpectralGraph:
         k (sp.Symbol): Symbolic variable representing momentum (real).
         z (sp.Symbol): Symbolic variable for the complex exponential `z = e^{i k}`.
         E (sp.Symbol): Symbolic variable for energy.
-        ChP (Poly): The characteristic polynomial (in E and z).
+        ChP (sp.Poly): The characteristic polynomial (in E and z).
         h_z (sp.Matrix): Bloch Hamiltonian expressed in terms of `z`.
         h_k (sp.Matrix): Bloch Hamiltonian expressed in terms of `k`.
         num_bands (int): Number of bands (i.e., dimension of the Hamiltonian matrix).
@@ -51,7 +49,7 @@ class SpectralGraph:
 
     def __init__(
         self,
-        characteristic: Union[Poly, str, sp.Matrix],
+        characteristic: Union[sp.Poly, str, sp.Matrix],
         k: sp.Symbol,
         z: sp.Symbol,
         E: sp.Symbol
@@ -65,7 +63,7 @@ class SpectralGraph:
         and the characteristic polynomial in a consistent manner.
 
         Args:
-            characteristic (Union[Poly, str, sp.Matrix]): The characteristic polynomial 
+            characteristic (Union[sp.Poly, str, sp.Matrix]): The characteristic polynomial 
                 or Hamiltonian matrix (depending on usage).
             k (sp.Symbol): Symbolic variable representing momentum (real).
             z (sp.Symbol): Symbolic variable for the complex exponential `z = e^{i k}`.
@@ -78,7 +76,7 @@ class SpectralGraph:
         """
         self.k, self.z, self.E = k, z, E
 
-        if isinstance(characteristic, Poly):
+        if isinstance(characteristic, sp.Poly):
             self.ChP = characteristic
             self._init_ChP()
         elif isinstance(characteristic, str):
@@ -86,7 +84,7 @@ class SpectralGraph:
             assert {E, z}.issubset(expr.free_symbols), (
                 f"ChP must include {E} AND {z} as free symbols"
             )
-            self.ChP = Poly(expr, z, 1/z, E)
+            self.ChP = sp.Poly(expr, z, 1/z, E)
             self._init_ChP()
         elif isinstance(characteristic, sp.Matrix):
             free_sym = characteristic.free_symbols
@@ -131,7 +129,7 @@ class SpectralGraph:
         )
 
         # Treat z as constant and E as variable
-        Poly_E = Poly(self.ChP.as_expr(), E)
+        Poly_E = sp.Poly(self.ChP.as_expr(), E)
         self.Poly_E_coeff = Poly_E.all_coeffs()
         self.num_bands = Poly_E.degree()
 
@@ -159,7 +157,7 @@ class SpectralGraph:
         Poly_E = self.h_z.charpoly(E)
         self.Poly_E_coeff = Poly_E.all_coeffs()
         self.num_bands = Poly_E.degree()
-        self.ChP = Poly(Poly_E.as_expr(), z, 1/z, E)
+        self.ChP = sp.Poly(Poly_E.as_expr(), z, 1/z, E)
 
     def _companion_E(self) -> None:
         """
@@ -171,10 +169,10 @@ class SpectralGraph:
         """
         z = self.z
         # Treat E as constant and z as variable
-        Poly_z_bigen = Poly(self.ChP.as_expr(), z, 1/z)
+        Poly_z_bigen = sp.Poly(self.ChP.as_expr(), z, 1/z)
         self.poly_p = Poly_z_bigen.degree(1/z)
         self.poly_q = Poly_z_bigen.degree(z)
-        Poly_z = Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
+        Poly_z = sp.Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
         self.Poly_z_coeff = Poly_z.all_coeffs()
         # Companion matrix of P(E)(z) for efficient root finding
         self.companion_E = sp.Matrix.companion(Poly_z.monic()).applyfunc(sp.expand)
@@ -233,7 +231,7 @@ class SpectralGraph:
             im_center - radius, im_center + radius
         ])
 
-    def _Poly_z_coeff_arr(self, E_array: ArrayLike) -> np.ndarray:
+    def _Poly_z_coeff_arr_from_E_arr(self, E_array: ArrayLike) -> np.ndarray:
         """
         Evaluate the coefficients (in z) of the characteristic polynomial 
         for a given array of E values.
@@ -259,7 +257,7 @@ class SpectralGraph:
                 raise ValueError("Poly_z_coeff must be a function of E only")
         return coeff_arr
 
-    def Poly_z_roots(
+    def Poly_z_roots_from_E_arr(
         self,
         E_array: ArrayLike,
         device: str = '/cpu:0'
@@ -276,14 +274,14 @@ class SpectralGraph:
         Returns:
             np.ndarray: Roots in z for each energy, shape = (*E_array.shape, poly_degree).
         """
-        coeff_arr = self._Poly_z_coeff_arr(E_array)
+        coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
         companion_arr = companion_batch(coeff_arr)
         with tf.device(device):
             companion_tensor = tf.convert_to_tensor(companion_arr)
             roots = tf.linalg.eigvals(companion_tensor)
         return roots.numpy()
 
-    def spectral_potential(
+    def spectral_potential_from_E_arr(
         self,
         E_array: ArrayLike,
         method: str = 'ronkin',
@@ -303,8 +301,8 @@ class SpectralGraph:
             np.ndarray: The evaluated potential for each E in E_array, 
             shape = E_array.shape.
         """
-        coeff_arr = self._Poly_z_coeff_arr(E_array)
-        roots = self.Poly_z_roots(E_array, device=device)
+        coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
+        roots = self.Poly_z_roots_from_E_arr(E_array, device=device)
         phi = spectral_potential(roots, coeff_arr, self.poly_q, method=method)
         return phi
 
@@ -385,7 +383,7 @@ class SpectralGraph:
         split_kernel = np.ones((resolution_enhancement, resolution_enhancement))
         phi_ = np.kron(phi, split_kernel)
         phi_block = view_as_blocks(phi_, (resolution_enhancement, resolution_enhancement))
-        phi_dense = self.spectral_potential(masked_E_block, method=method, device=device)
+        phi_dense = self.spectral_potential_from_E_arr(masked_E_block, method=method, device=device)
         phi_block[mask1_] = phi_dense
 
         ridge_ = PosGoL(phi_, **DOS_filter_kwargs)
@@ -442,7 +440,7 @@ class SpectralGraph:
         E_imag = np.linspace(*E_box[2:], resolution)
         E_arr = E_real + 1j * E_imag[:, None]
 
-        phi = self.spectral_potential(E_arr, method=method, device=device)
+        phi = self.spectral_potential_from_E_arr(E_arr, method=method, device=device)
         if method == 'ronkin':
             ridge = PosGoL(phi, **DOS_filter_kwargs)
         else:
