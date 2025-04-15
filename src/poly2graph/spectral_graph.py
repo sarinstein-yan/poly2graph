@@ -4,7 +4,7 @@ from skimage.filters import laplace, gaussian
 from sklearn.metrics import pairwise_distances
 
 from numpy.typing import ArrayLike
-from typing import Union, Optional, Callable, Iterable, TypeVar
+from typing import Union, Optional, Callable, Iterable, TypeVar, List
 NetworkXGraph = TypeVar('nxGraph', nx.Graph, nx.MultiGraph, nx.DiGraph, nx.MultiDiGraph)
 
 
@@ -104,8 +104,6 @@ def PosGoL(
             filtered_max = np.maximum(filtered_max, pos)
             
     return filtered_max
-
-
 
 def remove_isolates(
     G: NetworkXGraph, 
@@ -315,7 +313,7 @@ def contract_close_nodes(
     return remove_isolates(contracted_graph, copy=False) # final cleaning
 
 
-def spectral_potential(
+def spectral_potential_batch(
     z_arr: ArrayLike, 
     coeff_arr: ArrayLike, 
     q: int, 

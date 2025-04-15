@@ -167,3 +167,4 @@ cython_debug/
 # Project-specific files
 prompt_draft.md
 archive/
+data/

@@ -2,7 +2,7 @@ import numpy as np
 import networkx as nx
 from numba import njit
 from typing import Optional, Union, List
-from multiprocessing.dummy import Pool as ThreadPool
+from joblib import Parallel, delayed
 
 # adapted from https://github.com/Image-Py/sknw
 
@@ -263,13 +263,13 @@ def skeleton2graph_batch(
     iso: bool = False,
     ring: bool = True,
     full: bool = True,
-    Potential_image: Optional[Union[np.ndarray, List[np.ndarray]]] = None,
-    DOS_image: Optional[Union[np.ndarray, List[np.ndarray]]] = None,
+    Potential_images: Optional[Union[np.ndarray, List[np.ndarray]]] = None,
+    DOS_images: Optional[Union[np.ndarray, List[np.ndarray]]] = None,
     add_pts: bool = True,
-    num_threads: Optional[int] = None
+    n_jobs: Optional[int] = None,
 ) -> List[Union[nx.Graph, nx.MultiGraph]]:
     """
-    Processes a batch of skeleton images into NetworkX graphs using multi-threading.
+    Processes a batch of skeleton images into NetworkX graphs using Joblib for parallelization.
     
     Parameters:
     -----------
@@ -284,16 +284,16 @@ def skeleton2graph_batch(
         Whether to consider ring structures in the skeleton.
     full : bool, optional (default True)
         Whether to use rounded coordinates (True) or full coordinates (False) in the graph.
-    Potential_image : array-like, optional
+    Potential_images : array-like, optional
         A NumPy array (or list) of potential images corresponding to the skeleton images.
         Expected shape is (..., N, N) and the trailing dimensions must match those of skes.
-    DOS_image : array-like, optional
+    DOS_images : array-like, optional
         A NumPy array (or list) of DOS images corresponding to the skeleton images.
         Expected shape is (..., N, N) and the trailing dimensions must match those of skes.
     add_pts : bool, optional (default True)
         If True, includes all original skeleton points in the graph attributes.
-    num_threads : int, optional
-        The number of threads to use. If None, the pool defaults to the number of processors.
+    n_jobs : int, optional
+        The number of threads to use. If None, all available cores are used.
     
     Returns:
     --------
@@ -302,37 +302,40 @@ def skeleton2graph_batch(
     Raises:
     -------
     ValueError:
-        If the shapes of Potential_image or DOS_image do not match the shape of the skeleton images.
+        If the shapes of Potential_images or DOS_images do not match the shape of the skeleton images.
     """
+
     # Ensure skes is a NumPy array and check the shape.
     skes = np.asarray(skes)
     if skes.ndim < 2:
         raise ValueError("Input 'skes' must have at least 2 dimensions representing a 2D image.")
+    
     # Last two dimensions should be the image shape.
     image_shape = skes.shape[-2:]
+    
     # Flatten all batch dimensions into one.
     skes_list = skes.reshape(-1, *image_shape)
     n_images = skes_list.shape[0]
     
-    # Process Potential_image if provided.
-    if Potential_image is not None:
-        Potential_image = np.asarray(Potential_image)
-        if Potential_image.shape[-2:] != image_shape:
-            raise ValueError("The trailing two dimensions of Potential_image must match those of skes.")
-        pot_list = Potential_image.reshape(-1, *image_shape)
+    # Process Potential_images if provided.
+    if Potential_images is not None:
+        Potential_images = np.asarray(Potential_images)
+        if Potential_images.shape[-2:] != image_shape:
+            raise ValueError("The trailing two dimensions of Potential_images must match those of skes.")
+        pot_list = Potential_images.reshape(-1, *image_shape)
         if pot_list.shape[0] != n_images:
-            raise ValueError("Number of Potential_image entries must match the number of skeleton images.")
+            raise ValueError("Number of Potential_images entries must match the number of skeleton images.")
     else:
         pot_list = [None] * n_images
 
-    # Process DOS_image if provided.
-    if DOS_image is not None:
-        DOS_image = np.asarray(DOS_image)
-        if DOS_image.shape[-2:] != image_shape:
-            raise ValueError("The trailing two dimensions of DOS_image must match those of skes.")
-        dos_list = DOS_image.reshape(-1, *image_shape)
+    # Process DOS_images if provided.
+    if DOS_images is not None:
+        DOS_images = np.asarray(DOS_images)
+        if DOS_images.shape[-2:] != image_shape:
+            raise ValueError("The trailing two dimensions of DOS_images must match those of skes.")
+        dos_list = DOS_images.reshape(-1, *image_shape)
         if dos_list.shape[0] != n_images:
-            raise ValueError("Number of DOS_image entries must match the number of skeleton images.")
+            raise ValueError("Number of DOS_images entries must match the number of skeleton images.")
     else:
         dos_list = [None] * n_images
 
@@ -353,10 +356,12 @@ def skeleton2graph_batch(
     # Prepare the list of arguments.
     arg_list = list(zip(skes_list, pot_list, dos_list))
     
-    # Use a thread pool to process images concurrently.
-    pool = ThreadPool(num_threads) if num_threads is not None else ThreadPool()
-    graphs = pool.map(process_one, arg_list)
-    pool.close()
-    pool.join()
+    # Determine the number of jobs: use n_jobs if provided, otherwise all available cores.
+    n_jobs = n_jobs if n_jobs is not None else -1
+    
+    # Use Joblib's Parallel to process images concurrently.
+    graphs = Parallel(n_jobs=n_jobs, prefer='threads')(
+        delayed(process_one)(args) for args in arg_list
+    )
     
     return graphs

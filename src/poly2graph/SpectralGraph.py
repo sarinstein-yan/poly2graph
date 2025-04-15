@@ -1,30 +1,27 @@
 import numpy as np
+import sympy as sp
 import networkx as nx
 import tensorflow as tf
-
-import sympy as sp
-from sympy.polys.polytools import Poly
 
 from skimage.morphology import skeletonize, dilation, binary_closing, disk
 from skimage.util import view_as_blocks
 
-from .skeleton2graph import skeleton2graph
-from .spectral_graph import (
+from poly2graph.skeleton2graph import skeleton2graph
+from poly2graph.spectral_graph import (
     PosGoL,
-    spectral_potential,
+    spectral_potential_batch,
     add_edges_within_threshold,
     contract_close_nodes
 )
-from .hamiltonian import (
+from poly2graph.hamiltonian import (
     hk2hz_1d, hz2hk_1d,
     expand_hz_as_hop_dict_1d,
     H_1D_batch_from_hop_dict
 )
-from .util import companion_batch
+from poly2graph.util import companion_batch
 
 from numpy.typing import ArrayLike
-from typing import Union, Optional, Callable, Iterable, TypeVar
-
+from typing import Union, Optional, Callable, Iterable, TypeVar, Dict, List, Tuple, Sequence
 nxGraph = TypeVar('nxGraph', nx.Graph, nx.MultiGraph, nx.DiGraph, nx.MultiDiGraph)
 
 
@@ -37,7 +34,7 @@ class SpectralGraph:
         k (sp.Symbol): Symbolic variable representing momentum (real).
         z (sp.Symbol): Symbolic variable for the complex exponential `z = e^{i k}`.
         E (sp.Symbol): Symbolic variable for energy.
-        ChP (Poly): The characteristic polynomial (in E and z).
+        ChP (sp.Poly): The characteristic polynomial (in E and z).
         h_z (sp.Matrix): Bloch Hamiltonian expressed in terms of `z`.
         h_k (sp.Matrix): Bloch Hamiltonian expressed in terms of `k`.
         num_bands (int): Number of bands (i.e., dimension of the Hamiltonian matrix).
@@ -52,7 +49,7 @@ class SpectralGraph:
 
     def __init__(
         self,
-        characteristic: Union[Poly, str, sp.Matrix],
+        characteristic: Union[sp.Poly, str, sp.Matrix],
         k: sp.Symbol,
         z: sp.Symbol,
         E: sp.Symbol
@@ -66,7 +63,7 @@ class SpectralGraph:
         and the characteristic polynomial in a consistent manner.
 
         Args:
-            characteristic (Union[Poly, str, sp.Matrix]): The characteristic polynomial 
+            characteristic (Union[sp.Poly, str, sp.Matrix]): The characteristic polynomial 
                 or Hamiltonian matrix (depending on usage).
             k (sp.Symbol): Symbolic variable representing momentum (real).
             z (sp.Symbol): Symbolic variable for the complex exponential `z = e^{i k}`.
@@ -79,16 +76,16 @@ class SpectralGraph:
         """
         self.k, self.z, self.E = k, z, E
 
-        if isinstance(characteristic, Poly):
+        if isinstance(characteristic, sp.Poly):
             self.ChP = characteristic
-            self._init_ChP()
+            self._init_from_ChP()
         elif isinstance(characteristic, str):
             expr = sp.sympify(characteristic, locals={'z': z, 'E': E})
             assert {E, z}.issubset(expr.free_symbols), (
                 f"ChP must include {E} AND {z} as free symbols"
             )
-            self.ChP = Poly(expr, z, 1/z, E)
-            self._init_ChP()
+            self.ChP = sp.Poly(expr, z, 1/z, E)
+            self._init_from_ChP()
         elif isinstance(characteristic, sp.Matrix):
             free_sym = characteristic.free_symbols
             if self.k in free_sym and self.z not in free_sym:
@@ -101,14 +98,15 @@ class SpectralGraph:
                 raise ValueError(
                     f"Characteristic polynomial must include {k} XOR {z} as a free symbol"
                 )
-            self._init_bloch()
+            self._init_from_bloch()
         else:
             raise ValueError("Characteristic polynomial must be a Poly, string, or Matrix.")
 
         self._companion_E()
-        self._spectral_boundaries()
+        self._get_spectral_boundaries()
+        self._image_cache = {}
 
-    def _init_ChP(self) -> None:
+    def _init_from_ChP(self) -> None:
         """
         Internal method to initialize the Bloch Hamiltonian and polynomial data
         from a given characteristic polynomial (ChP).
@@ -131,7 +129,7 @@ class SpectralGraph:
         )
 
         # Treat z as constant and E as variable
-        Poly_E = Poly(self.ChP.as_expr(), E)
+        Poly_E = sp.Poly(self.ChP.as_expr(), E)
         self.Poly_E_coeff = Poly_E.all_coeffs()
         self.num_bands = Poly_E.degree()
 
@@ -143,7 +141,7 @@ class SpectralGraph:
             self.h_z = sp.Matrix.companion(Poly_E.monic()).applyfunc(sp.expand)
         self.h_k = hz2hk_1d(self.h_z, k, z)
 
-    def _init_bloch(self) -> None:
+    def _init_from_bloch(self) -> None:
         """
         Internal method to initialize characteristic polynomial data 
         from a given Bloch Hamiltonian (h_k or h_z).
@@ -159,7 +157,7 @@ class SpectralGraph:
         Poly_E = self.h_z.charpoly(E)
         self.Poly_E_coeff = Poly_E.all_coeffs()
         self.num_bands = Poly_E.degree()
-        self.ChP = Poly(Poly_E.as_expr(), z, 1/z, E)
+        self.ChP = sp.Poly(Poly_E.as_expr(), z, 1/z, E)
 
     def _companion_E(self) -> None:
         """
@@ -169,14 +167,12 @@ class SpectralGraph:
         multiplying the polynomial by the appropriate power of z to get 
         a standard polynomial form in z.
         """
+        z = self.z
         # Treat E as constant and z as variable
-        Poly_z_bigen = Poly(self.ChP.as_expr(), self.z, 1/self.z)
-        self.poly_p = Poly_z_bigen.degree(1/self.z)
-        self.poly_q = Poly_z_bigen.degree(self.z)
-        Poly_z = Poly(
-            sp.expand(self.ChP.as_expr() * self.z**self.poly_p),
-            self.z
-        )
+        Poly_z_bigen = sp.Poly(self.ChP.as_expr(), z, 1/z)
+        self.poly_p = Poly_z_bigen.degree(1/z)
+        self.poly_q = Poly_z_bigen.degree(z)
+        Poly_z = sp.Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
         self.Poly_z_coeff = Poly_z.all_coeffs()
         # Companion matrix of P(E)(z) for efficient root finding
         self.companion_E = sp.Matrix.companion(Poly_z.monic()).applyfunc(sp.expand)
@@ -185,8 +181,7 @@ class SpectralGraph:
         self,
         N: int = 40,
         max_dim: int = 150,
-        pbc: bool = False,
-        param_dict: dict = {}
+        pbc: bool = False
     ) -> np.ndarray:
         """
         Construct a finite real-space Hamiltonian of size (num_bands*N) x (num_bands*N).
@@ -206,10 +201,10 @@ class SpectralGraph:
         if self.num_bands * N > max_dim:
             N = max_dim // self.num_bands
         hop_dict = expand_hz_as_hop_dict_1d(self.h_z, self.z)
-        H = H_1D_batch_from_hop_dict(hop_dict, N, pbc, param_dict)
+        H = H_1D_batch_from_hop_dict(hop_dict, N, pbc)
         return H
 
-    def _spectral_boundaries(self) -> None:
+    def _get_spectral_boundaries(self, pad_factor = 0.05) -> None:
         """
         Estimate a bounding circle and square around the spectrum in the complex plane
         by diagonalizing a moderate-size finite chain Hamiltonian.
@@ -223,7 +218,6 @@ class SpectralGraph:
         E = np.linalg.eigvals(finite_chain)
 
         # dilate the boundary for safety
-        pad_factor = 0.05
         re_min, re_max = np.min(E.real), np.max(E.real)
         re_radius, re_center = (re_max - re_min)/2, (re_max + re_min)/2
         im_min, im_max = np.min(E.imag), np.max(E.imag)
@@ -237,7 +231,7 @@ class SpectralGraph:
             im_center - radius, im_center + radius
         ])
 
-    def _Poly_z_coeff_arr(self, E_array: ArrayLike) -> np.ndarray:
+    def _Poly_z_coeff_arr_from_E_arr(self, E_array: ArrayLike) -> np.ndarray:
         """
         Evaluate the coefficients (in z) of the characteristic polynomial 
         for a given array of E values.
@@ -263,7 +257,7 @@ class SpectralGraph:
                 raise ValueError("Poly_z_coeff must be a function of E only")
         return coeff_arr
 
-    def Poly_z_roots(
+    def Poly_z_roots_from_E_arr(
         self,
         E_array: ArrayLike,
         device: str = '/cpu:0'
@@ -280,14 +274,14 @@ class SpectralGraph:
         Returns:
             np.ndarray: Roots in z for each energy, shape = (*E_array.shape, poly_degree).
         """
-        coeff_arr = self._Poly_z_coeff_arr(E_array)
+        coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
         companion_arr = companion_batch(coeff_arr)
         with tf.device(device):
             companion_tensor = tf.convert_to_tensor(companion_arr)
             roots = tf.linalg.eigvals(companion_tensor)
         return roots.numpy()
 
-    def spectral_potential(
+    def spectral_potential_from_E_arr(
         self,
         E_array: ArrayLike,
         method: str = 'ronkin',
@@ -307,18 +301,112 @@ class SpectralGraph:
             np.ndarray: The evaluated potential for each E in E_array, 
             shape = E_array.shape.
         """
-        coeff_arr = self._Poly_z_coeff_arr(E_array)
-        roots = self.Poly_z_roots(E_array, device=device)
-        phi = spectral_potential(roots, coeff_arr, self.poly_q, method=method)
+        coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
+        roots = self.Poly_z_roots_from_E_arr(E_array, device=device)
+        phi = spectral_potential_batch(roots, coeff_arr, self.poly_q, method=method)
         return phi
 
+    @staticmethod
+    def _get_masks(binary, dilation_radius=2):
+        """
+        Compute masks for the binary image and its dilation.
+        
+        Args:
+            binary (np.ndarray): Binary mask of the spectral region.
+            dilation_radius (int, optional): Radius for dilation. Defaults to 2.
+            
+        Returns:
+            tuple: (mask1, mask0, mask1_), where mask1 is the mask of the binary region,
+                  mask0 is the mask of the complement, and mask1_ is the mask of the
+                  dilated binary region.
+        """
+        mask1 = np.where(binary)
+        mask0 = np.where(~binary)
+        dilated = dilation(binary, disk(dilation_radius))
+        mask1_ = np.where(dilated)
+        return mask1, mask0, mask1_
+    
+    @staticmethod
+    def _get_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement):
+        """
+        Compute a threshold for the enhanced resolution ridge image.
+        
+        Args:
+            ridge (np.ndarray): Ridge image at the original resolution.
+            ridge_block (np.ndarray): Ridge image blocks at the enhanced resolution.
+            mask1 (tuple): Mask of the binary region.
+            mask0 (tuple): Mask of the complement region.
+            resolution_enhancement (int): Factor by which resolution was enhanced.
+            
+        Returns:
+            float: Threshold for the enhanced resolution ridge image.
+        """
+        weights = np.array([
+            ridge_block[mask1].size, 
+            ridge[mask0].size * resolution_enhancement**2
+        ])
+        means = np.array([
+            np.mean(ridge_block[mask1]),
+            np.mean(ridge[mask0])
+        ])
+        threshold = np.dot(weights, means) / np.sum(weights)
+        return threshold
+    
+    def _enhance_resolution(self, E_box, phi, ridge, binary, 
+                            resolution, resolution_enhancement, 
+                            method, device, DOS_filter_kwargs):
+        """
+        Enhance the resolution of the spectral images in regions near the spectral boundary.
+        
+        Args:
+            E_box (np.ndarray): Spectral box boundaries.
+            phi (np.ndarray): Spectral potential at original resolution.
+            ridge (np.ndarray): Ridge image at original resolution.
+            binary (np.ndarray): Binary mask at original resolution.
+            resolution (int): Original resolution.
+            resolution_enhancement (int): Factor by which to enhance resolution.
+            method (str): Method for computing spectral potential.
+            device (str): TensorFlow device.
+            DOS_filter_kwargs (dict): Parameters for DOS filtering.
+            
+        Returns:
+            tuple: (phi_, ridge_, binary_), the enhanced versions of the spectral images.
+        """
+        enhanced_resolution = resolution * resolution_enhancement
+        E_real_ = np.linspace(*E_box[:2], enhanced_resolution)
+        E_imag_ = np.linspace(*E_box[2:], enhanced_resolution)
+        E_split = E_real_ + 1j * E_imag_[:, None]
+        
+        mask1, mask0, mask1_ = self._get_masks(binary)
+
+        E_block = view_as_blocks(E_split, (resolution_enhancement, resolution_enhancement))
+        masked_E_block = E_block[mask1_]
+
+        split_kernel = np.ones((resolution_enhancement, resolution_enhancement))
+        phi_ = np.kron(phi, split_kernel)
+        phi_block = view_as_blocks(phi_, (resolution_enhancement, resolution_enhancement))
+        phi_dense = self.spectral_potential_from_E_arr(masked_E_block, method=method, device=device)
+        phi_block[mask1_] = phi_dense
+
+        ridge_ = PosGoL(phi_, **DOS_filter_kwargs)
+        ridge_block = view_as_blocks(ridge_, (resolution_enhancement, resolution_enhancement))
+        ridge_block[mask0] = 0
+
+        threshold = self._get_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement)
+        binary_ = ridge_ > threshold
+        binary_block = view_as_blocks(binary_, (resolution_enhancement, resolution_enhancement))
+        binary_block[mask0] = 0
+
+        return phi_, ridge_, binary_
+    
     def spectral_images(
         self,
         resolution: int = 256,
         resolution_enhancement: int = 4,
         device: str = '/cpu:0',
         method: str = 'ronkin',
-        DOS_filter_kwargs: Optional[dict] = None
+        DOS_filter_kwargs: Optional[dict] = {},
+        cache: bool = True
     ) -> tuple:
         """
         Create images of the spectral potential, a filtered (DOS-like) image, 
@@ -332,69 +420,98 @@ class SpectralGraph:
             method (str, optional): Method for computing spectral potential. 
                 Defaults to 'ronkin'.
             DOS_filter_kwargs (dict, optional): Keyword arguments for `PosGoL` 
-                filter or similar. Defaults to None.
+                filter or similar. Defaults to {}.
+            cache (bool, optional): Whether to use cached images if available. 
+                Defaults to True.
 
         Returns:
             tuple: (phi, ridge, binary), or the enhanced versions (phi_, ridge_, binary_) 
             if `resolution_enhancement > 1`.
-        """
-        if DOS_filter_kwargs is None:
-            DOS_filter_kwargs = {}
-
+        """        
+        # Create a unique key for caching
+        cache_key = (resolution, resolution_enhancement, method, str(DOS_filter_kwargs))
+        
+        # Check cache if requested
+        if cache and cache_key in self._image_cache:
+            return self._image_cache[cache_key]
+        
+        # If not in cache or not using cache, compute the images
         E_box = self.spectral_square
-        E_arr = (
-            np.linspace(*E_box[:2], resolution)
-            + 1j*np.linspace(*E_box[2:], resolution)[:, None]
-        )
 
-        phi = self.spectral_potential(E_arr, method=method, device=device)
+        E_real = np.linspace(*E_box[:2], resolution)
+        E_imag = np.linspace(*E_box[2:], resolution)
+        E_arr = E_real + 1j * E_imag[:, None]
+
+        phi = self.spectral_potential_from_E_arr(E_arr, method=method, device=device)
         if method == 'ronkin':
             ridge = PosGoL(phi, **DOS_filter_kwargs)
         else:
             ridge = phi
 
         binary = ridge > np.mean(ridge)
+        
+        result = None
         if resolution_enhancement <= 1 or resolution_enhancement is None:
-            return phi, ridge, binary
+            result = (phi, ridge, binary)
+        else:
+            # Apply resolution enhancement
+            phi_, ridge_, binary_ = self._enhance_resolution(
+                E_box, phi, ridge, binary, resolution, resolution_enhancement, 
+                method, device, DOS_filter_kwargs
+            )
+            result = (phi_, ridge_, binary_)
         
-        # resolution enhancement on a filtered region
-        mask1 = np.where(binary)
-        mask0 = np.where(~binary)
-        dilated = dilation(binary, disk(2))
-        mask1_ = np.where(dilated)
+        # Cache the result
+        if cache:
+            self._image_cache[cache_key] = result
+            
+        return result
+
+    def _recover_energy_coordinates(
+        self, 
+        graph: nxGraph, 
+        scale: float, 
+        center_offset: np.ndarray, 
+        magnify: float = 1.0
+    ) -> nxGraph:
+        """
+        Process the graph node positions and edge weights to convert from pixel coordinates 
+        to energy values.
         
-        enhanced_resolution = resolution * resolution_enhancement
-        E_split = (
-            np.linspace(*E_box[:2], enhanced_resolution)
-            + 1j*np.linspace(*E_box[2:], enhanced_resolution)[:, None]
-        )
-        E_block = view_as_blocks(E_split, (resolution_enhancement, resolution_enhancement))
-        masked_E_block = E_block[mask1_]
+        Args:
+            graph (nxGraph): The graph to process
+            scale (float): The scale factor to convert from pixel units to energy units
+            center_offset (np.ndarray): The offset for centering
+            magnify (float): Factor to scale positions and weights for aesthetics
+            
+        Returns:
+            nxGraph: The processed graph
+        """
+        if magnify <= 0:
+            magnify = 1.0
+            
+        for node in graph.nodes(data=True):
+            if 'pos' in node[1]:
+                pos = np.asarray(node[1]['pos'], dtype=np.float32)
+                # Recover the (x, y) coordinates from the 2D array indices
+                new_pos = (pos[::-1] - center_offset) * scale + self.spectral_center
+                node[1]['pos'] = new_pos * magnify
+            if 'pts' in node[1]:
+                pts = np.asarray(node[1]['pts'], dtype=np.float32)
+                new_pts = (pts[..., ::-1] - center_offset) * scale + self.spectral_center
+                node[1]['pts'] = new_pts * magnify
 
-        split_kernel = np.ones((resolution_enhancement, resolution_enhancement))
-        phi_ = np.kron(phi, split_kernel)
-        phi_block = view_as_blocks(phi_, (resolution_enhancement, resolution_enhancement))
-        phi_dense = self.spectral_potential(masked_E_block, method=method, device=device)
-        phi_block[mask1_] = phi_dense
-
-        ridge_ = PosGoL(phi_, **DOS_filter_kwargs)
-        ridge_block = view_as_blocks(ridge_, (resolution_enhancement, resolution_enhancement))
-        ridge_block[mask0] = 0
-
-        weights = np.array([
-            ridge_block[mask1].size, 
-            ridge[mask0].size * resolution_enhancement**2
-        ])
-        means = np.array([
-            np.mean(ridge_block[mask1]),
-            np.mean(ridge[mask0])
-        ])
-        threshold = np.dot(weights, means) / np.sum(weights)
-        binary_ = ridge_ > threshold
-        binary_block = view_as_blocks(binary_, (resolution_enhancement, resolution_enhancement))
-        binary_block[mask0] = 0
-
-        return phi_, ridge_, binary_
+        for edge in graph.edges(data=True):
+            if 'weight' in edge[2]:
+                weight = np.asarray(edge[2]['weight'], dtype=np.float32)
+                new_weight = weight * scale
+                edge[2]['weight'] = new_weight * magnify
+            if 'pts' in edge[2]:
+                pts = np.asarray(edge[2]['pts'], dtype=np.float32)
+                new_pts = (pts[..., ::-1] - center_offset) * scale + self.spectral_center
+                edge[2]['pts'] = new_pts * magnify
+                
+        return graph
 
     def spectral_graph(
         self,
@@ -403,9 +520,10 @@ class SpectralGraph:
         device: str = '/cpu:0',
         method: str = 'ronkin',
         short_edge_threshold: Optional[float] = 20,
-        skeleton2graph_kwargs: Optional[dict] = None,
-        DOS_filter_kwargs: Optional[dict] = None,
-        magnify: float = 1.0
+        skeleton2graph_kwargs: Optional[dict] = {},
+        DOS_filter_kwargs: Optional[dict] = {},
+        magnify: float = 1.0,
+        cache: bool = True
     ) -> nxGraph:
         """
         Build a graph representation from the complex-energy spectral geometry.
@@ -426,30 +544,31 @@ class SpectralGraph:
                 than this threshold (in pixel units of the final image) are 
                 added and contracted to reduce graph noise. Defaults to 20.
             skeleton2graph_kwargs (Optional[dict], optional): Additional kwargs for 
-                the skeleton-to-graph conversion. Defaults to None.
+                the skeleton-to-graph conversion. Defaults to {}.
             DOS_filter_kwargs (Optional[dict], optional): Additional kwargs for the 
-                DOS or ridge filtering method. Defaults to None.
+                DOS or ridge filtering method. Defaults to {}.
             magnify (float, optional): A factor to scale the positions and edge weights 
                 in the final graph for numeric stability or aesthetics. Defaults to 1.0.
+            cache (bool, optional): Whether to use cached images if available.
+                Defaults to True.
 
         Returns:
             nxGraph: A (NetworkX) graph representation of the spectral skeleton.
         """
-        if skeleton2graph_kwargs is None:
-            skeleton2graph_kwargs = {}
-        if DOS_filter_kwargs is None:
-            DOS_filter_kwargs = {}
-
+        # Get spectral images (from cache if available)
         phi, ridge, binary = self.spectral_images(
             resolution=resolution,
             resolution_enhancement=resolution_enhancement,
             device=device,
             method=method,
-            DOS_filter_kwargs=DOS_filter_kwargs
+            DOS_filter_kwargs=DOS_filter_kwargs,
+            cache=cache
         )
-        # obtain graph skeleton
+        
+        # Obtain graph skeleton
         ske = skeletonize(binary, method='lee')
-        # construct skeleton graph
+        
+        # Construct skeleton graph
         graph = skeleton2graph(
             ske,
             Potential_image=phi.astype(np.float32),
@@ -457,38 +576,24 @@ class SpectralGraph:
             **skeleton2graph_kwargs
         )
 
-        ### post-process the extracted graph
-        # merge close nodes and short edges
+        ### Post-process the extracted graph
+        # Merge close nodes and short edges
         if short_edge_threshold is not None and short_edge_threshold > 0:
             graph = add_edges_within_threshold(graph, short_edge_threshold)
             graph = contract_close_nodes(graph, short_edge_threshold)
 
-        # convert the graph attributes from pixel index to energy values
+        # Calculate parameters for coordinate transformation
         final_res = resolution * resolution_enhancement
-        cen = self.spectral_center
         scale = self.spectral_radius * 2 / final_res
-        cen_ = np.array([final_res - 1, final_res - 1]) / 2  # offset for 0-based indexing
+        center_offset = np.array([final_res - 1, final_res - 1]) / 2  # offset for 0-based indexing
 
-        if magnify is not None and magnify > 0:
-            for node in graph.nodes(data=True):
-                if 'pos' in node[1]:
-                    pos = np.asarray(node[1]['pos'], dtype=np.float32)
-                    # Recover the (x, y) coordinates from the 2D array indices
-                    new_pos = (pos[::-1] - cen_) * scale + cen
-                    node[1]['pos'] = new_pos * magnify
-                if 'pts' in node[1]:
-                    pts = np.asarray(node[1]['pts'], dtype=np.float32)
-                    new_pts = (pts[..., ::-1] - cen_) * scale + cen
-                    node[1]['pts'] = new_pts * magnify
-
-            for edge in graph.edges(data=True):
-                if 'weight' in edge[2]:
-                    weight = np.asarray(edge[2]['weight'], dtype=np.float32)
-                    new_weight = weight * scale
-                    edge[2]['weight'] = new_weight * magnify
-                if 'pts' in edge[2]:
-                    pts = np.asarray(edge[2]['pts'], dtype=np.float32)
-                    new_pts = (pts[..., ::-1] - cen_) * scale + cen
-                    edge[2]['pts'] = new_pts * magnify
+        # Process graph positions
+        graph = self._recover_energy_coordinates(graph, scale, center_offset, magnify)
 
         return graph
+        
+    def clear_cache(self):
+        """
+        Clear the cached spectral images.
+        """
+        self._image_cache = {}
