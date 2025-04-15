@@ -30,6 +30,58 @@ nxGraph = TypeVar('nxGraph', nx.Graph, nx.MultiGraph, nx.DiGraph, nx.MultiDiGrap
 
 
 class CharPolyClass:
+    """
+    A class for handling and analyzing characteristic polynomials of Hamiltonians.
+    
+    This class provides methods to initialize, manipulate, and analyze characteristic
+    polynomials for quantum systems, particularly for spectral graph theory applications.
+    It supports initialization from different representations (polynomial, string, or matrix),
+    computation of spectral potentials, and generation of spectral images and graphs.
+    
+    Parameters
+    ----------
+    characteristic : Union[sp.Poly, str, sp.Matrix]
+        The characteristic polynomial representation, which can be a SymPy polynomial,
+        a string expression, or a matrix.
+    k : sp.Symbol
+        The symbol representing wavenumber (momentum space).
+    z : sp.Symbol
+        The symbol representing the complex variable for analytic continuation.
+    E : sp.Symbol
+        The symbol representing energy.
+    params : Optional[Set[sp.Symbol]], default={}
+        A set of symbolic parameters used in the Hamiltonian.
+        
+    Attributes
+    ----------
+    k : sp.Symbol
+        Symbol for wavenumber (momentum space).
+    z : sp.Symbol
+        Symbol for the complex variable.
+    E : sp.Symbol
+        Symbol for energy.
+    params : List[sp.Symbol]
+        Sorted list of symbolic parameters.
+    ChP : sp.Poly
+        The characteristic polynomial.
+    h_z : sp.Matrix
+        The Hamiltonian in terms of z.
+    h_k : sp.Matrix
+        The Hamiltonian in terms of k.
+    hop_dict : Dict
+        Dictionary of hopping terms.
+    num_bands : int
+        Number of bands in the system.
+    poly_p : int
+        Right hopping range.
+    poly_q : int
+        Left hopping range.
+    companion_E : sp.Matrix
+        Companion matrix for P(E)(z).
+    """
+
+    # --- Initialization Methods --- #
+    
     def __init__(
         self,
         characteristic: Union[sp.Poly, str, sp.Matrix],
@@ -37,8 +89,37 @@ class CharPolyClass:
         z: sp.Symbol,
         E: sp.Symbol,
         params: Optional[Set[sp.Symbol]] = {},
-        # param_dict: Optional[Dict[sp.Symbol, ArrayLike]] = {},
     ) -> None:
+        """
+        Initialize the CharPolyClass.
+        
+        Parameters
+        ----------
+        characteristic : Union[sp.Poly, str, sp.Matrix]
+            The characteristic polynomial representation. Can be:
+            - A SymPy polynomial
+            - A string expression
+            - A matrix (Bloch Hamiltonian)
+        k : sp.Symbol
+            Symbol for wavenumber (momentum space).
+        z : sp.Symbol
+            Symbol for complex variable.
+        E : sp.Symbol
+            Symbol for energy.
+        params : Optional[Set[sp.Symbol]], default={}
+            Set of symbolic parameters used in the Hamiltonian.
+        
+        Returns
+        -------
+        None
+        
+        Notes
+        -----
+        The initialization process depends on the type of characteristic input:
+        - For SymPy polynomial: Directly uses it as ChP and derives h_z and h_k
+        - For string: Converts to SymPy polynomial then follows polynomial path
+        - For matrix: Uses it as h_k or h_z and derives the other along with ChP
+        """
         
         self.k, self.z, self.E = k, z, E
         self.params = sorted(params, key=lambda s: s.name)
@@ -77,7 +158,7 @@ class CharPolyClass:
 
 
     def _init_from_ChP(self) -> None:
-        """Initialize attributes when starting from a Characteristic Polynomial."""
+        """Initialize attributes from a Characteristic Polynomial."""
         k, z, E = self.k, self.z, self.E
         assert {E, z}.issubset(self.ChP.free_symbols), \
             "ChP must include E and z as free symbols"
@@ -104,7 +185,7 @@ class CharPolyClass:
 
 
     def _init_from_bloch(self) -> None:
-        """Initialize attributes when starting from a Bloch Hamiltonian Matrix."""
+        """Initialize attributes from a Bloch Hamiltonian Matrix."""
         z, E = self.z, self.E
         
         # Calculate Characteristic polynomial from h_z
@@ -190,96 +271,12 @@ class CharPolyClass:
                 func = eval_params_and_E
 
             self.Poly_z_coeff_funcs.append(func)
-    
-    def _get_Poly_z_coeff_arr(self, E_array, param_dict):
-        n_coeff = len(self.Poly_z_coeff_funcs)
-        target_shape = E_array.shape + (n_coeff,)
-        coeff_arr = np.empty(target_shape, dtype=np.complex128)
 
-        for i, func in enumerate(self.Poly_z_coeff_funcs):
-            coeff_arr[..., i] = func(E_array, param_dict)
 
-        return coeff_arr
-    
-    def get_Poly_z_coeff_arr(self, E_array: ArrayLike, param_dict: Dict[sp.Symbol, ArrayLike]):
-        E_array, param_dict, batch_shape, num_samples, resolution = \
-            self._process_E_array_and_param_dict(E_array, param_dict)
-        coeff_arr = self._get_Poly_z_coeff_arr(E_array, param_dict)
-        return coeff_arr
-    
-    def get_Poly_z_roots(
-        self,
-        E_array: ArrayLike,
-        param_dict: Dict[sp.Symbol, ArrayLike],
-        device: str = '/CPU:0',
-    ):
-        coeff_arr = self.get_Poly_z_coeff_arr(E_array, param_dict)
-        roots = self._get_Poly_z_roots_from_coeff_arr(coeff_arr, device=device)
-        return roots
-
-    def _process_E_array_and_param_dict(self, E_array, param_dict):
-        E_array = np.asarray(E_array)
-        resolution = E_array.shape[-1]
-        param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
-        # NOTE: Disable assertion when generating from safe batches
-        assert E_array.shape[:-2] == batch_shape, \
-            f"Batch shape of `param_dict` {batch_shape} must match that of `E_array` {E_array.shape[:-2]}."
-        return E_array, param_dict, batch_shape, num_samples, resolution
-
-    def _get_Poly_z_roots_from_coeff_arr(
-        self,
-        coeff_arr: ArrayLike,
-        device: str = '/CPU:0',
-    ) -> np.ndarray:
-        coeff_arr = np.asarray(coeff_arr)
-        companion_arr = companion_batch(coeff_arr)
-        with tf.device(device):
-            companion_tensor = tf.convert_to_tensor(companion_arr)
-            roots = tf.linalg.eigvals(companion_tensor)
-        return roots.numpy()
-    
-    def get_spectral_potential_batch(
-        self,
-        E_array: ArrayLike,
-        param_dict: Dict[sp.Symbol, ArrayLike],
-        device: str = '/CPU:0',
-        method: str = 'ronkin',
-    ) -> np.ndarray:
-        coeff_arr = self._get_Poly_z_coeff_arr(E_array, param_dict)
-        roots = self._get_Poly_z_roots_from_coeff_arr(coeff_arr, device=device)
-        phi = spectral_potential_batch(roots, coeff_arr, self.poly_q, method=method)
-        return phi
-
-    def _get_Poly_z_coeff(self, E_array, param_vals):
-        n_coeff = len(self.Poly_z_coeff)
-        target_shape = np.shape(E_array) + (n_coeff,)
-        coeff_arr = np.zeros(target_shape, dtype=np.complex128)
-        sub_mapping = {s: v for s, v in zip(self.params, param_vals)}
-
-        for i, coeff_expr in enumerate(self.Poly_z_coeff):
-            if not coeff_expr.free_symbols:
-                coeff_arr[..., i] = complex(coeff_expr)
-            else:
-                coeff_expr = coeff_expr.subs(sub_mapping)
-                coeff_dict = coeff_expr.as_poly(self.E).as_dict()
-                for d, c in coeff_dict.items():
-                    coeff_arr[..., i] += complex(c) * (E_array ** int(d[0]))
-        return coeff_arr
-    
-    def get_spectral_potential(
-        self,
-        E_array: ArrayLike,
-        param_vals: Iterable, # sorted according to self.params
-        device: str = '/CPU:0',
-        method: str = 'ronkin',
-    ) -> np.ndarray:
-        coeff_arr = self._get_Poly_z_coeff(E_array, param_vals)
-        roots = self._get_Poly_z_roots_from_coeff_arr(coeff_arr, device=device)
-        phi = spectral_potential_batch(roots, coeff_arr, self.poly_q, method=method)
-        return phi
-
+    # --- Parameter Preprocessing --- #
 
     def _process_params_dict(self, param_dict):
+        """Process parameter dictionary to ensure consistent shapes and return batch information."""
         # NOTE: Disable assertions when generating from safe batches
         assert set(param_dict.keys()) == set(self.params), \
             f"param_dict keys {param_dict.keys()} must match params {self.params}."
@@ -299,6 +296,123 @@ class CharPolyClass:
         #     f"{num_samples} total instances.")
         return param_dict, batch_shape, num_samples
 
+
+    def _process_E_array_and_param_dict(self, E_array, param_dict):
+        """Process energy array and parameter dictionary to ensure consistent shapes."""
+        E_array = np.asarray(E_array)
+        resolution = E_array.shape[-1]
+        param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
+        # NOTE: Disable assertion when generating from safe batches
+        assert E_array.shape[:-2] == batch_shape, \
+            f"Batch shape of `param_dict` {batch_shape} must match that of `E_array` {E_array.shape[:-2]}."
+        return E_array, param_dict, batch_shape, num_samples, resolution
+
+
+    # --- Polynomial Processing --- #
+
+    def get_Poly_z_coeff_arr(
+        self, 
+        E_array: ArrayLike, 
+        param_dict: Dict[sp.Symbol, ArrayLike]
+    ) -> np.ndarray:
+        """
+        Get polynomial coefficients as arrays for a batch of energy values and parameters.
+        
+        Parameters
+        ----------
+        E_array : ArrayLike
+            Array of energy values.
+        param_dict : Dict[sp.Symbol, ArrayLike]
+            Dictionary mapping parameter symbols to their values.
+            
+        Returns
+        -------
+        np.ndarray
+            Array of polynomial coefficients.
+        """
+        E_array, param_dict, batch_shape, num_samples, resolution = \
+            self._process_E_array_and_param_dict(E_array, param_dict)
+        coeff_arr = self._get_Poly_z_coeff_arr(E_array, param_dict)
+        return coeff_arr
+
+
+    def _get_Poly_z_coeff_arr(self, E_array, param_dict):
+        """Get polynomial coefficients as array for batch computation."""
+        n_coeff = len(self.Poly_z_coeff_funcs)
+        target_shape = E_array.shape + (n_coeff,)
+        coeff_arr = np.empty(target_shape, dtype=np.complex128)
+
+        for i, func in enumerate(self.Poly_z_coeff_funcs):
+            coeff_arr[..., i] = func(E_array, param_dict)
+
+        return coeff_arr
+
+
+    def _get_Poly_z_coeff(self, E_array, param_vals):
+        """
+        Get polynomial coefficients for a single set of parameter values.
+        `param_vals` should be sorted according to `self.params`.
+        """
+        n_coeff = len(self.Poly_z_coeff)
+        target_shape = np.shape(E_array) + (n_coeff,)
+        coeff_arr = np.zeros(target_shape, dtype=np.complex128)
+        sub_mapping = {s: v for s, v in zip(self.params, param_vals)}
+
+        for i, coeff_expr in enumerate(self.Poly_z_coeff):
+            if not coeff_expr.free_symbols:
+                coeff_arr[..., i] = complex(coeff_expr)
+            else:
+                coeff_expr = coeff_expr.subs(sub_mapping)
+                coeff_dict = coeff_expr.as_poly(self.E).as_dict()
+                for d, c in coeff_dict.items():
+                    coeff_arr[..., i] += complex(c) * (E_array ** int(d[0]))
+        return coeff_arr
+
+
+    def get_Poly_z_roots(
+        self,
+        E_array: ArrayLike,
+        param_dict: Dict[sp.Symbol, ArrayLike],
+        device: str = '/CPU:0',
+    ):
+        """
+        Compute the roots of P(E)(z) for a batch of energy values and parameters.
+        
+        Parameters
+        ----------
+        E_array : ArrayLike
+            Array of energy values.
+        param_dict : Dict[sp.Symbol, ArrayLike]
+            Dictionary mapping parameter symbols to their values.
+        device : str, default='/CPU:0'
+            Device to use for TensorFlow computations.
+            
+        Returns
+        -------
+        np.ndarray
+            Array of polynomial roots.
+        """
+        coeff_arr = self.get_Poly_z_coeff_arr(E_array, param_dict)
+        roots = self._get_Poly_z_roots_from_coeff_arr(coeff_arr, device=device)
+        return roots
+
+
+    def _get_Poly_z_roots_from_coeff_arr(
+        self,
+        coeff_arr: ArrayLike,
+        device: str = '/CPU:0',
+    ) -> np.ndarray:
+        """Compute roots of polynomial from coefficient array using TensorFlow."""
+        coeff_arr = np.asarray(coeff_arr)
+        companion_arr = companion_batch(coeff_arr)
+        with tf.device(device):
+            companion_tensor = tf.convert_to_tensor(companion_arr)
+            roots = tf.linalg.eigvals(companion_tensor)
+        return roots.numpy()
+
+
+    # --- Spectral Boundaries --- #
+
     def real_space_H(
         self,
         param_dict: Dict[sp.Symbol, ArrayLike],
@@ -306,7 +420,26 @@ class CharPolyClass:
         max_dim: int = 150,
         pbc: bool = False,
     ) -> np.ndarray:
-        # Limit the size of the real space Hamiltonian to avoid numerical inaccuracies
+        """
+        Construct the real space Hamiltonian.
+        
+        Parameters
+        ----------
+        param_dict : Dict[sp.Symbol, ArrayLike]
+            Dictionary mapping parameter symbols to their values.
+        N : int, default=40
+            Size of the real space lattice.
+        max_dim : int, default=150
+            Maximum dimension for the Hamiltonian matrix. Limit the size 
+            of the real space Hamiltonian to avoid numerical inaccuracies
+        pbc : bool, default=False
+            Whether to use periodic boundary conditions.
+            
+        Returns
+        -------
+        np.ndarray
+            Real space Hamiltonian matrix.
+        """
         if self.num_bands * N > max_dim:
             N = max_dim // self.num_bands
         param_dict = {s: np.asarray(v) for s, v in param_dict.items()}
@@ -319,6 +452,28 @@ class CharPolyClass:
         device='/CPU:0',
         pad_factor=0.05,
     ) -> None:
+        """
+        Determine the boundaries of the spectral region for plotting.
+        
+        Parameters
+        ----------
+        param_dict : Dict[sp.Symbol, ArrayLike]
+            Dictionary mapping parameter symbols to their values.
+        device : str, default='/CPU:0'
+            Device to use for TensorFlow computations.
+        pad_factor : float, default=0.05
+            Factor by which to pad the spectral region.
+            
+        Returns
+        -------
+        tuple
+            Tuple containing (spectral_square, spectral_center, spectral_radius).
+            spectral_square is a 4-tuple (re_min, re_max, im_min, im_max).
+        
+        Notes
+        -----
+        Uses eigenvalues of a finite chain to determine spectral boundaries.
+        """
         finite_chain = self.real_space_H(param_dict=param_dict)
         E_arr = eigvals_batch(finite_chain, device, is_hermitian=False)
         
@@ -343,66 +498,132 @@ class CharPolyClass:
 
         return spectral_square, spectral_center, spectral_radius
 
-    @staticmethod
-    def get_E_array(spectral_square, resolution):
-        spectral_square = np.asarray(spectral_square)
-        E_real = np.linspace(spectral_square[..., 0], spectral_square[..., 1], 
-                             resolution, axis=-1)
-        E_imag = np.linspace(spectral_square[..., 2], spectral_square[..., 3], 
-                             resolution, axis=-1)
-        return E_real[..., None, :] + 1j * E_imag[..., :, None]
 
-    @staticmethod
-    def _get_masks(binary, dilation_radius=2):
-        mask1 = np.where(binary)
-        mask0 = np.where(~binary)
-        dilated = dilation(binary, disk(dilation_radius))
-        mask1_ = np.where(dilated)
-        return mask1, mask0, mask1_
-    
-    @staticmethod
-    def _get_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement):
-        weights = np.array([
-            ridge_block[mask1].size, 
-            ridge[mask0].size * resolution_enhancement**2
-        ])
-        means = np.array([
-            np.mean(ridge_block[mask1]),
-            np.mean(ridge[mask0])
-        ])
-        threshold = np.dot(weights, means) / np.sum(weights)
-        return threshold
-    
-    def _enhance_resolution(self, E_split, param_vals, phi, ridge, binary, device, 
-                            resolution_enhancement, method, DOS_filter_kwargs):
-        mask1, mask0, mask1_ = CharPolyClass._get_masks(binary)
+    # --- Spectral Potential --- #
 
-        E_block = view_as_blocks(E_split, (resolution_enhancement, resolution_enhancement))
-        masked_E_block = E_block[mask1_]
-
-        phi_split = self.get_spectral_potential(
-            E_array=masked_E_block, param_vals=param_vals,
-            device=device, method=method,
-        )
-
-        split_kernel = np.ones((resolution_enhancement, resolution_enhancement))
-        phi_ = np.kron(phi, split_kernel)
-        phi_block = view_as_blocks(phi_, (resolution_enhancement, resolution_enhancement))
-        phi_block[mask1_] = phi_split
-
-        ridge_ = PosGoL(phi_, **DOS_filter_kwargs)
-        ridge_block = view_as_blocks(ridge_, (resolution_enhancement, resolution_enhancement))
-        ridge_block[mask0] = 0
-
-        threshold = self._get_enhanced_threshold(
-            ridge, ridge_block, mask1, mask0, resolution_enhancement
-        )
-        binary_ = ridge_ > threshold
-        binary_block = view_as_blocks(binary_, (resolution_enhancement, resolution_enhancement))
-        binary_block[mask0] = 0
-
-        return phi_, ridge_, binary_
+    def get_spectral_potential_batch(
+        self,
+        E_array: ArrayLike,
+        param_dict: Dict[sp.Symbol, ArrayLike],
+        device: str = '/CPU:0',
+        method: str = 'ronkin',
+    ) -> np.ndarray:
+        """
+        Compute spectral potential for a batch of energy values and parameters.
+        
+        Parameters
+        ----------
+        E_array : ArrayLike
+            Array of energy values.
+        param_dict : Dict[sp.Symbol, ArrayLike]
+            Dictionary mapping parameter symbols to their values.
+        device : str, default='/CPU:0'
+            Device to use for TensorFlow computations.
+        method : str, default='ronkin'
+            Method to use for computing the spectral potential.
             
+        Returns
+        -------
+        np.ndarray
+            Array of spectral potential values.
+        """
+        coeff_arr = self._get_Poly_z_coeff_arr(E_array, param_dict)
+        roots = self._get_Poly_z_roots_from_coeff_arr(coeff_arr, device=device)
+        phi = spectral_potential_batch(roots, coeff_arr, self.poly_q, method=method)
+        return phi
+
+
+    def get_spectral_potential(
+        self,
+        E_array: ArrayLike,
+        param_vals: Iterable, # sorted according to self.params
+        device: str = '/CPU:0',
+        method: str = 'ronkin',
+    ) -> np.ndarray:
+        """
+        Compute spectral potential for a single set of parameter values.
+        
+        Parameters
+        ----------
+        E_array : ArrayLike
+            Array of energy values.
+        param_vals : Iterable
+            Parameter values, sorted according to self.params.
+        device : str, default='/CPU:0'
+            Device to use for TensorFlow computations.
+        method : str, default='ronkin'
+            Method to use for computing the spectral potential.
+            
+        Returns
+        -------
+        np.ndarray
+            Array of spectral potential values.
+        """
+        coeff_arr = self._get_Poly_z_coeff(E_array, param_vals)
+        roots = self._get_Poly_z_roots_from_coeff_arr(coeff_arr, device=device)
+        phi = spectral_potential_batch(roots, coeff_arr, self.poly_q, method=method)
+        return phi
+
+
+    # --- Spectral Images: Potential, Ridges, and Skeleton Masks --- #
+
+    def spectral_images(
+        self,
+        param_dict: Dict[sp.Symbol, ArrayLike],
+        n_jobs: Union[Callable, int] = -1,
+        device: str = '/CPU:0',
+        resolution: int = 256,
+        resolution_enhancement: int = 4,
+        method: str = 'ronkin',
+        DOS_filter_kwargs: Optional[dict] = {},
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Generate spectral images for a batch of parameter values.
+        
+        Parameters
+        ----------
+        param_dict : Dict[sp.Symbol, ArrayLike]
+            Dictionary mapping parameter symbols to their values.
+        n_jobs : Union[Callable, int], default=-1
+            Number of parallel jobs or a custom batcher function.
+        device : str, default='/CPU:0'
+            Device to use for TensorFlow computations.
+        resolution : int, default=256
+            Resolution of the spectral images.
+        resolution_enhancement : int, default=4
+            Factor by which to enhance the resolution in regions of interest.
+        method : str, default='ronkin'
+            Method to use for computing the spectral potential.
+        DOS_filter_kwargs : Optional[dict], default={}
+            Keyword arguments for DOS filtering.
+            
+        Returns
+        -------
+        tuple
+            Tuple of (phis, ridges, binaries) arrays representing the spectral images.
+        """
+
+        param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
+        
+        spectral_square, spectral_center, spectral_radius = \
+            self.get_spectral_boundaries(param_dict=param_dict, device=device)
+        
+        batcher = Parallel(n_jobs=n_jobs, prefer='threads')
+
+        phis, ridges, binaries = self._spectral_images_flat(
+            param_dict, spectral_square, num_samples,
+            device, batcher, resolution, resolution_enhancement,
+            method, DOS_filter_kwargs,
+        )
+
+        if len(batch_shape) > 1:
+            phis = np.reshape(phis, batch_shape + (resolution, resolution))
+            ridges = np.reshape(ridges, batch_shape + (resolution, resolution))
+            binaries = np.reshape(binaries, batch_shape + (resolution, resolution))
+
+        return phis, ridges, binaries
+
+
     def _spectral_images_flat(
         self,
         param_dict: Dict[sp.Symbol, Iterable],
@@ -414,7 +635,8 @@ class CharPolyClass:
         resolution_enhancement: int = 4,
         method: str = 'ronkin',
         DOS_filter_kwargs: Optional[dict] = {},
-    ) -> tuple:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute spectral images for flattened parameter values."""
         if isinstance(batcher_or_n_jobs, int):
             batcher = Parallel(n_jobs=batcher_or_n_jobs, prefer='threads')
         else:
@@ -458,37 +680,66 @@ class CharPolyClass:
             result = zip(*result)
         
         return result
-    
-    def spectral_images(
-        self,
-        param_dict: Dict[sp.Symbol, ArrayLike],
-        n_jobs: Union[Callable, int] = -1,
-        device: str = '/CPU:0',
-        resolution: int = 256,
-        resolution_enhancement: int = 4,
-        method: str = 'ronkin',
-        DOS_filter_kwargs: Optional[dict] = {},
-    ) -> tuple:
 
-        param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
-        
-        spectral_square, spectral_center, spectral_radius = \
-            self.get_spectral_boundaries(param_dict=param_dict, device=device)
-        
-        batcher = Parallel(n_jobs=n_jobs, prefer='threads')
 
-        phis, ridges, binaries = self._spectral_images_flat(
-            param_dict, spectral_square, num_samples,
-            device, batcher, resolution, resolution_enhancement,
-            method, DOS_filter_kwargs,
+    def _enhance_resolution(self, E_split, param_vals, phi, ridge, binary, device, 
+                        resolution_enhancement, method, DOS_filter_kwargs):
+        """Enhance the resolution of spectral images in regions of interest."""
+        mask1, mask0, mask1_ = CharPolyClass._get_masks(binary)
+
+        E_block = view_as_blocks(E_split, (resolution_enhancement, resolution_enhancement))
+        masked_E_block = E_block[mask1_]
+
+        phi_split = self.get_spectral_potential(
+            E_array=masked_E_block, param_vals=param_vals,
+            device=device, method=method,
         )
 
-        if len(batch_shape) > 1:
-            phis = np.reshape(phis, batch_shape + (resolution, resolution))
-            ridges = np.reshape(ridges, batch_shape + (resolution, resolution))
-            binaries = np.reshape(binaries, batch_shape + (resolution, resolution))
+        split_kernel = np.ones((resolution_enhancement, resolution_enhancement))
+        phi_ = np.kron(phi, split_kernel)
+        phi_block = view_as_blocks(phi_, (resolution_enhancement, resolution_enhancement))
+        phi_block[mask1_] = phi_split
 
-        return phis, ridges, binaries
+        ridge_ = PosGoL(phi_, **DOS_filter_kwargs)
+        ridge_block = view_as_blocks(ridge_, (resolution_enhancement, resolution_enhancement))
+        ridge_block[mask0] = 0
+
+        threshold = self._get_enhanced_threshold(
+            ridge, ridge_block, mask1, mask0, resolution_enhancement
+        )
+        binary_ = ridge_ > threshold
+        binary_block = view_as_blocks(binary_, (resolution_enhancement, resolution_enhancement))
+        binary_block[mask0] = 0
+
+        return phi_, ridge_, binary_
+
+
+    @staticmethod
+    def _get_masks(binary, dilation_radius=2):
+        """Get masks for resolution enhancement."""
+        mask1 = np.where(binary)
+        mask0 = np.where(~binary)
+        dilated = dilation(binary, disk(dilation_radius))
+        mask1_ = np.where(dilated)
+        return mask1, mask0, mask1_
+
+
+    @staticmethod
+    def _get_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement):
+        """Compute threshold for enhanced resolution binary image."""
+        weights = np.array([
+            ridge_block[mask1].size, 
+            ridge[mask0].size * resolution_enhancement**2
+        ])
+        means = np.array([
+            np.mean(ridge_block[mask1]),
+            np.mean(ridge[mask0])
+        ])
+        threshold = np.dot(weights, means) / np.sum(weights)
+        return threshold
+
+
+    # --- Spectral Graph Generation --- #
 
     def spectral_graph(
         self,
@@ -502,7 +753,39 @@ class CharPolyClass:
         skeleton2graph_kwargs: Optional[dict] = {},
         DOS_filter_kwargs: Optional[dict] = {},
         magnify: float = 1.0,
-    ) -> nxGraph:
+    ) -> Tuple[List[nxGraph], np.ndarray]:
+        """
+        Generate spectral graphs for a batch of parameter values.
+        
+        Parameters
+        ----------
+        param_dict : Dict[sp.Symbol, ArrayLike]
+            Dictionary mapping parameter symbols to their values.
+        n_jobs : int, default=-1
+            Number of parallel jobs.
+        device : str, default='/CPU:0'
+            Device to use for TensorFlow computations.
+        resolution : int, default=256
+            Resolution of the spectral images.
+        resolution_enhancement : int, default=4
+            Factor by which to enhance the resolution in regions of interest.
+        method : str, default='ronkin'
+            Method to use for computing the spectral potential.
+        short_edge_threshold : Optional[float], default=20
+            Threshold for merging short edges in the graph.
+        skeleton2graph_kwargs : Optional[dict], default={}
+            Keyword arguments for skeleton2graph function.
+        DOS_filter_kwargs : Optional[dict], default={}
+            Keyword arguments for DOS filtering.
+        magnify : float, default=1.0
+            Factor by which to magnify the graph coordinates.
+            
+        Returns
+        -------
+        tuple
+            Tuple of (graphs, indices) where graphs is a list of networkx graphs
+            and indices is an array of indices into the list.
+        """
         
         param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
         
@@ -534,10 +817,9 @@ class CharPolyClass:
     
     @staticmethod
     def _get_skeleton_graph(binary, phi, ridge, 
-                            skeleton2graph_kwargs,
-                            short_edge_threshold, 
-                            spectral_radius, spectral_center,
-                            final_res, magnify):
+                        skeleton2graph_kwargs, short_edge_threshold, 
+                        spectral_radius, spectral_center, final_res, magnify):
+        """Create a graph from a binary skeleton image."""
         # Obtain graph skeleton
         ske = skeletonize(binary, method='lee')
         # Construct skeleton graph
@@ -556,8 +838,9 @@ class CharPolyClass:
 
     @staticmethod
     def _process_skeleton_graph(graph, short_edge_threshold, 
-                                spectral_radius, spectral_center,
-                                final_res, magnify):
+                            spectral_radius, spectral_center,
+                            final_res, magnify):
+        """Process a skeleton graph by merging close nodes and transforming coordinates."""
         # Merge close nodes and short edges
         if short_edge_threshold is not None and short_edge_threshold > 0:
             graph = add_edges_within_threshold(graph, short_edge_threshold)
@@ -572,7 +855,8 @@ class CharPolyClass:
             graph, spectral_center, scale, center_offset, magnify
         )
         return graph
-    
+
+
     @staticmethod
     def _recover_energy_coordinates(
         graph: nxGraph, 
@@ -581,6 +865,8 @@ class CharPolyClass:
         center_offset: np.ndarray, 
         magnify: float = 1.0
     ) -> nxGraph:
+        """Transform graph coordinates from pixel space to energy space."""
+        
         if magnify <= 0:
             magnify = 1.0
             
@@ -606,3 +892,30 @@ class CharPolyClass:
                 edge[2]['pts'] = new_pts * magnify
                 
         return graph
+
+
+    # --- Helpers --- #
+
+    @staticmethod
+    def get_E_array(spectral_square, resolution):
+        """
+        Generate an array of complex energy values within a spectral square.
+        
+        Parameters
+        ----------
+        spectral_square : np.ndarray
+            Array of (re_min, re_max, im_min, im_max) defining the spectral region.
+        resolution : int
+            Resolution of the energy grid.
+            
+        Returns
+        -------
+        np.ndarray
+            Array of complex energy values.
+        """
+        spectral_square = np.asarray(spectral_square)
+        E_real = np.linspace(spectral_square[..., 0], spectral_square[..., 1], 
+                             resolution, axis=-1)
+        E_imag = np.linspace(spectral_square[..., 2], spectral_square[..., 3], 
+                             resolution, axis=-1)
+        return E_real[..., None, :] + 1j * E_imag[..., :, None]
