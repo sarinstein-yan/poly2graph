@@ -1,6 +1,6 @@
 import numpy as np
 import sympy as sp
-from .util import kron_batch
+from poly2graph.util import kron_batch
 
 def shift_matrix(N, shift=1, pbc=True):
     """
