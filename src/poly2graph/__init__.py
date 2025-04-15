@@ -10,11 +10,12 @@ __all__ = [
 
     'skeleton2graph', 'skeleton2graph_batch',
 
-    'minmax_normalize', 'PosGoL',
+    'minmax_normalize',
+    'PosGoL',
     'remove_isolates',
     'add_edges_within_threshold',
     'contract_close_nodes',
-    'spectral_potential',
+    'spectral_potential_batch',
 
     'SpectralGraph',
 
@@ -39,11 +40,12 @@ from poly2graph.hamiltonian import (
 )
 from poly2graph.skeleton2graph import skeleton2graph, skeleton2graph_batch
 from poly2graph.spectral_graph import (
-    minmax_normalize, PosGoL,
+    minmax_normalize, 
+    PosGoL,
     remove_isolates,
     add_edges_within_threshold,
     contract_close_nodes,
-    spectral_potential,
+    spectral_potential_batch,
 )
 from poly2graph.SpectralGraph import SpectralGraph
 from poly2graph.util import companion_batch, kron_batch, eig_batch, eigvals_batch

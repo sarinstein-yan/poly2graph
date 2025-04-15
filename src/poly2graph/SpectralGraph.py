@@ -9,7 +9,7 @@ from skimage.util import view_as_blocks
 from poly2graph.skeleton2graph import skeleton2graph
 from poly2graph.spectral_graph import (
     PosGoL,
-    spectral_potential,
+    spectral_potential_batch,
     add_edges_within_threshold,
     contract_close_nodes
 )
@@ -303,7 +303,7 @@ class SpectralGraph:
         """
         coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
         roots = self.Poly_z_roots_from_E_arr(E_array, device=device)
-        phi = spectral_potential(roots, coeff_arr, self.poly_q, method=method)
+        phi = spectral_potential_batch(roots, coeff_arr, self.poly_q, method=method)
         return phi
 
     @staticmethod

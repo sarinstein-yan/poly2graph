@@ -17,7 +17,7 @@
      - Computation bottleneck can be accelerated on GPU, TPU, and any other devices that `tensorflow` supports
   2. Cover generic topological lattices
      - Support generic one-band and multi-band models
-     - Flexible multiple input choices, be they characteristic polynomials or Bloch Hamiltonians; formats include strings, `sympy`'s `Poly`, and `Matrix`
+     - Flexible multiple input choices, be they characteristic polynomials or Bloch Hamiltonians; formats include strings, `sympy.Poly`, and `sympy.Matrix`
   3. Automatic and Robust
      - By default, no hyper-parameters are needed. Just input the characteristic of your model and `poly2graph` handles the rest
      - Automatic spectral boundary inference
@@ -64,7 +64,6 @@ import numpy as np
 import networkx as nx
 import tensorflow as tf
 import sympy as sp
-from sympy.polys.polytools import Poly
 import matplotlib.pyplot as plt
 
 # always start by initializing the symbols for k, z, and E
@@ -92,16 +91,16 @@ $$h(k) = e^{4ik} - e^{ik} - e^{-2ik}$$
 The valid input formats to initialize a `p2g.SpectralGraph` object are:
 1. Characteristic polynomial in terms of `z` and `E`:
    - as a string of the Poly in terms of `z` and `E`
-   - as a `sympy`'s `Poly` (`sympy.polys.polytools.Poly`) with {`z`, `1/z`, `E`} as generators
+   - as a `sympy.Poly` with {`z`, `1/z`, `E`} as generators
 2. Bloch Hamiltonian in terms of `k` or `z`
-   - as a `sympy` `Matrix` in terms of `k`
-   - as a `sympy` `Matrix` in terms of `z`
+   - as a `sympy.Matrix` in terms of `k`
+   - as a `sympy.Matrix` in terms of `z`
 
 All the following `characteristic`s are valid and will initialize to the same characteristic polynomial and therefore produce the same spectral graph:
 ```python
 char_poly_str = '-z**-2 - E - z + z**4'
 
-char_poly_Poly = Poly(
+char_poly_Poly = sp.Poly(
     -z**-2 - E - z + z**4,
     z, 1/z, E # generators are z, 1/z, E
 )

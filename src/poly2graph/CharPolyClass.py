@@ -13,7 +13,7 @@ import warnings
 from poly2graph.skeleton2graph import skeleton2graph, skeleton2graph_batch
 from poly2graph.spectral_graph import (
     PosGoL,
-    spectral_potential,
+    spectral_potential_batch,
     add_edges_within_threshold,
     contract_close_nodes
 )
@@ -36,27 +36,12 @@ class CharPolyClass:
         k: sp.Symbol,
         z: sp.Symbol,
         E: sp.Symbol,
-        param_dict: Optional[Dict[sp.Symbol, ArrayLike]] = {},
+        params: Dict[sp.Symbol] = {},
+        # param_dict: Optional[Dict[sp.Symbol, ArrayLike]] = {},
     ) -> None:
         
         self.k, self.z, self.E = k, z, E
-        self.params = list(param_dict.keys())
-        self.param_dict = {s: np.asarray(v) for s, v in param_dict.items()} # Ensure arrays
-
-        # Check if all parameter values have the same shape
-        batch_shapes = [v.shape for v in self.param_dict.values()]
-        if not batch_shapes:
-             self.batch_shape = ()
-             self.num_samples = 1
-        else:
-            assert all(shape == batch_shapes[0] for shape in batch_shapes), \
-                "Parameter values must have the same shape."
-            self.batch_shape = batch_shapes[0]
-            self.num_samples = int(np.prod(self.batch_shape))
-        
-        print(f"Hamiltonian Parameters: {self.params}; "
-              f"batch shape {self.batch_shape}; "
-              f"{self.num_samples} total instances.")
+        self.params = sorted(params, key=lambda s: s.name)
 
         # Initialize based on characteristic type
         if isinstance(characteristic, sp.Poly):
@@ -86,8 +71,10 @@ class CharPolyClass:
         else:
             raise ValueError("Characteristic must be a sympy Poly, string, or Matrix.")
 
-        # Prepare coefficients and companion matrix for z-polynomial
-        self._prepare_poly_z()
+        self.hop_dict = expand_hz_as_hop_dict_1d(self.h_z, self.z)
+        # Prepare coefficients and companion matrix for P(E)(z)
+        self._prepare_Poly_z()
+
 
     def _init_from_ChP(self) -> None:
         """Initialize attributes when starting from a Characteristic Polynomial."""
@@ -115,9 +102,11 @@ class CharPolyClass:
         self.h_k = hz2hk_1d(self.h_z, k, z)
         print(f"Derived Bloch Hamiltonian `h_z` with {self.num_bands} bands.")
 
+
     def _init_from_bloch(self) -> None:
         """Initialize attributes when starting from a Bloch Hamiltonian Matrix."""
         z, E = self.z, self.E
+        
         # Calculate Characteristic polynomial from h_z
         # NOTE: charpoly() creates a new PurePoly object with dummy variables.
         Poly_E_pure = self.h_z.charpoly(E)
@@ -129,7 +118,8 @@ class CharPolyClass:
         self.ChP = sp.Poly(Poly_E_expr, z, 1/z, E) # Define gens explicitly
         print(f"Derived Characteristic polynomial `ChP` with {self.num_bands} bands.")
 
-    def _prepare_poly_z(self) -> None:
+
+    def _prepare_Poly_z(self) -> None:
         """Prepare coefficients and companion matrix for the polynomial in z."""
         z = self.z
         # Treat E as constant and z as variable
@@ -144,16 +134,14 @@ class CharPolyClass:
         monic_Poly_z = Poly_z.monic()
         self.companion_E = sp.Matrix.companion(monic_Poly_z).applyfunc(sp.expand)
         # Lambdify coefficients for numerical evaluation later
-        self._lambdify_poly_z_coeffs()
+        self._lambdify_Poly_z_coeffs()
 
-    def _lambdify_poly_z_coeffs(self):
+
+    def _lambdify_Poly_z_coeffs(self):
         """Create lambda functions for evaluating Poly_z coefficients."""
         self.Poly_z_coeff_funcs = []
         allowed_params_set = set(self.params)
         allowed_all_set = allowed_params_set | {self.E}
-
-        # Prepare arguments for lambdify in the correct order
-        args_order = self.params + [self.E] # E always comes last
 
         for i, expr in enumerate(self.Poly_z_coeff):
             syms = expr.free_symbols
@@ -161,35 +149,130 @@ class CharPolyClass:
                 raise ValueError(f"Coefficient {i} contains invalid symbols: {syms - allowed_all_set}")
 
             if not syms: # Constant
-                func = lambda *args, val=complex(expr): np.full(args[-1].shape, val) # args[-1] is E_array
+                func = lambda E_array, param_dict: complex(expr)
+            
             elif syms == {self.E}: # Depends only on E
-                func = sp.lambdify(self.E, expr, modules=["numpy"])
+                f = sp.lambdify(self.E, expr, modules=["numpy"])
+                func = lambda E_array, param_dict: f(E_array)
+            
             elif syms <= allowed_params_set: # Depends only on params
-                 # Need to broadcast param values to match E_array shape later
-                 func = sp.lambdify(self.params, expr, modules=["numpy"])
-            else: # Depends on E and params
-                 func = sp.lambdify(args_order, expr, modules=["numpy"])
+                f = sp.lambdify(self.params, expr, modules=["numpy"])
+                def eval_params(E_array, param_dict):
+                    param_vals = [param_dict[s] for s in self.params]
+                    val = f(*param_vals)[..., None, None] # shape: (batch_shape, 1, 1)
+                    return np.broadcast_to(val, E_array.shape)
+                func = eval_params
 
-            self.Poly_z_coeff_funcs.append({'func': func, 'syms': syms})
+            else:  # Depends on E and params
+                poly = sp.Poly(expr, self.E)
+                # cache {degree: lambdified function} for each monomial coefficient
+                monomial_funcs = {}
+                for (deg,), coeff_expr in poly.as_dict().items():
+                    if coeff_expr.free_symbols:
+                        monomial_funcs[deg] = sp.lambdify(self.params, coeff_expr, modules="numpy")
+                    else:
+                        monomial_funcs[deg] = complex(coeff_expr)
+
+                def eval_params_and_E(E_array, param_dict):
+                    result = np.zeros_like(E_array, dtype=np.complex128)
+                    param_vals = [param_dict[s] for s in self.params]
+                    for deg, f in monomial_funcs.items():
+                        if callable(f):
+                            p_val = f(*param_vals)[..., None, None] # shape: (batch_shape, 1, 1)
+                        else:
+                            p_val = f # already a constant number
+                        result += p_val * (E_array ** deg) # shape: E_array.shape
+                    return result
+                func = eval_params_and_E
+
+            self.Poly_z_coeff_funcs.append(func)
+    
+    def get_Poly_z_coeff_arr(self, E_array: ArrayLike, param_dict: Dict[sp.Symbol, ArrayLike]):
+        E_array, param_dict, *_ = self._process_E_array_and_param_dict(E_array, param_dict)
+
+        n_coeff = len(self.Poly_z_coeff_funcs)
+        target_shape = E_array.shape + (n_coeff,)
+        coeff_arr_batch = np.empty(target_shape, dtype=np.complex128)
+
+        for i, func in enumerate(self.Poly_z_coeff_funcs):
+            coeff_arr_batch[..., i] = func(E_array, param_dict)
+
+        return coeff_arr_batch
+
+    def get_Poly_z_roots(
+        self,
+        E_array: ArrayLike,
+        param_dict: Dict[sp.Symbol, ArrayLike],
+        device: str = '/CPU:0',
+    ) -> np.ndarray:
+        coeff_arr = self.get_Poly_z_coeff_arr(E_array, param_dict)
+        companion_arr = companion_batch(coeff_arr)
+        with tf.device(device):
+            companion_tensor = tf.convert_to_tensor(companion_arr)
+            roots = tf.linalg.eigvals(companion_tensor)
+        return roots.numpy()
+
+    def get_spectral_potential(
+        self,
+        E_array: ArrayLike,
+        param_dict: Dict[sp.Symbol, ArrayLike],
+        device: str = '/CPU:0',
+        method: str = 'ronkin',
+    ) -> np.ndarray:
+        coeff_arr = self.get_Poly_z_coeff_arr(E_array)
+        roots = self.get_Poly_z_roots(E_array, device=device)
+        phi = spectral_potential_batch(roots, coeff_arr, self.poly_q, method=method)
+        return phi
+
+    def _process_params_dict(self, param_dict):
+        # NOTE: Disable assertions when generating from safe batches
+        assert set(param_dict.keys()) == set(self.params), \
+            f"param_dict keys {param_dict.keys()} must match params {self.params}."
+        param_dict = {s: np.asarray(v) for s, v in param_dict.items()} # Ensure arrays
+        # Check if all parameter values have the same shape
+        batch_shapes = [v.shape for v in param_dict.values()]
+        if not batch_shapes:
+            batch_shape = ()
+            num_samples = 1
+        else:
+            assert all(shape == batch_shapes[0] for shape in batch_shapes), \
+                "Parameter values must have the same shape."
+            batch_shape = batch_shapes[0]
+            num_samples = int(np.prod(batch_shape))
+        # print(f"Hamiltonian Parameters: {params}; "
+        #     f"batch shape {batch_shape}; "
+        #     f"{num_samples} total instances.")
+        return param_dict, batch_shape, num_samples
+    
+    def _process_E_array_and_param_dict(self, E_array, param_dict):
+        E_array = np.asarray(E_array)
+        resolution = E_array.shape[-1]
+        param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
+        # NOTE: Disable assertion when generating from safe batches
+        assert E_array.shape[:-2] == batch_shape, \
+            f"Batch shape of `param_dict` {batch_shape} must match that of `E_array` {E_array.shape[:-2]}."
+        return E_array, param_dict, batch_shape, num_samples, resolution
 
     def real_space_H(
         self,
+        param_dict: Dict[sp.Symbol, ArrayLike],
         N: int = 40,
         max_dim: int = 150,
         pbc: bool = False,
-        param_dict: Optional[Dict[sp.Symbol, ArrayLike]] = None,
     ) -> np.ndarray:
         # Limit the size of the real space Hamiltonian to avoid numerical inaccuracies
         if self.num_bands * N > max_dim:
             N = max_dim // self.num_bands
-        hop_dict = expand_hz_as_hop_dict_1d(self.h_z, self.z)
-        if param_dict is None:
-            param_dict = self.param_dict
-        H = H_1D_batch_from_hop_dict(hop_dict, N, pbc, param_dict)
+        H = H_1D_batch_from_hop_dict(self.hop_dict, N, pbc, param_dict)
         return H
 
-    def _spectral_boundaries(self, device='/CPU:0', pad_factor=0.05) -> None:
-        finite_chain = self.real_space_H()
+    def _get_spectral_boundaries(
+        self, 
+        param_dict: Dict[sp.Symbol, ArrayLike],
+        device='/CPU:0',
+        pad_factor=0.05,
+    ) -> None:
+        finite_chain = self.real_space_H(param_dict=param_dict)
         E_arr = eigvals_batch(finite_chain, device, is_hermitian=False)
         
         re_min, re_max = np.amin(E_arr.real, axis=-1), np.amax(E_arr.real, axis=-1)
@@ -200,50 +283,26 @@ class CharPolyClass:
         
         radius = np.maximum(re_radius, im_radius) * (1 + pad_factor)
         
-        self.spectral_center = np.stack([re_center, im_center], axis=-1)
-        self.spectral_radius = radius
-        self.spectral_square = np.stack([
+        spectral_center = np.stack([re_center, im_center], axis=-1)
+        spectral_radius = radius
+        spectral_square = np.stack([
             re_center - radius, re_center + radius, 
             im_center - radius, im_center + radius
         ], axis=-1)
 
-    def _Poly_z_coeff_arr_from_E_arr(self, E_array: ArrayLike) -> np.ndarray:
-        E_array = np.asarray(E_array)
-        coeff_arr = np.zeros(
-            (*E_array.shape, len(self.Poly_z_coeff)), dtype=np.complex128
-        )
-        for i, coeff in enumerate(self.Poly_z_coeff):
-            if coeff.free_symbols == set():
-                coeff_arr[..., i] = coeff
-            elif coeff.free_symbols == {self.E}:
-                f = sp.lambdify(self.E, coeff, modules='numpy')
-                coeff_arr[..., i] = f(E_array)
-            else:
-                raise ValueError("Poly_z_coeff must be a function of E only")
-        return coeff_arr
+        if np.any(radius == 0):
+             warnings.warn("Warning: Zero `spectral_radius` detected. "
+                    "This may indicate a degenerate spectrum.")
 
-    def Poly_z_roots_from_E_arr(
-        self,
-        E_array: ArrayLike,
-        device: str = '/cpu:0'
-    ) -> np.ndarray:
-        coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
-        companion_arr = companion_batch(coeff_arr)
-        with tf.device(device):
-            companion_tensor = tf.convert_to_tensor(companion_arr)
-            roots = tf.linalg.eigvals(companion_tensor)
-        return roots.numpy()
+        return spectral_square, spectral_center, spectral_radius, 
 
-    def spectral_potential_from_E_arr(
-        self,
-        E_array: ArrayLike,
-        method: str = 'ronkin',
-        device: str = '/cpu:0'
-    ) -> np.ndarray:
-        coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
-        roots = self.Poly_z_roots_from_E_arr(E_array, device=device)
-        phi = spectral_potential(roots, coeff_arr, self.poly_q, method=method)
-        return phi
+    @staticmethod
+    def _compute_E_array(spectral_square, resolution):
+        E_real = np.linspace(spectral_square[..., 0], spectral_square[..., 1], 
+                             resolution, axis=-1)
+        E_imag = np.linspace(spectral_square[..., 2], spectral_square[..., 3], 
+                             resolution, axis=-1)
+        return E_real + 1j * E_imag[..., None]
 
     @staticmethod
     def _compute_masks(binary, dilation_radius=2):
