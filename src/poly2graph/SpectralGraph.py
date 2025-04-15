@@ -352,7 +352,9 @@ class SpectralGraph:
         threshold = np.dot(weights, means) / np.sum(weights)
         return threshold
     
-    def _enhance_resolution(self, E_box, phi, ridge, binary, resolution, resolution_enhancement, method, device, DOS_filter_kwargs):
+    def _enhance_resolution(self, E_box, phi, ridge, binary, 
+                            resolution, resolution_enhancement, 
+                            method, device, DOS_filter_kwargs):
         """
         Enhance the resolution of the spectral images in regions near the spectral boundary.
         
