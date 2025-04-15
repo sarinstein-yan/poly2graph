@@ -610,18 +610,19 @@ class CharPolyClass:
         
         batcher = Parallel(n_jobs=n_jobs, prefer='threads')
 
-        phis, ridges, binaries = self._spectral_images_flat(
-            param_dict, spectral_square, num_samples,
-            device, batcher, resolution, resolution_enhancement,
-            method, DOS_filter_kwargs,
-        )
+        phis, ridges, binaries, final_res = \
+            self._spectral_images_flat(
+                param_dict, spectral_square, num_samples,
+                device, batcher, resolution, resolution_enhancement,
+                method, DOS_filter_kwargs,
+            )
 
         if len(batch_shape) > 1:
-            phis = np.reshape(phis, batch_shape + (resolution, resolution))
-            ridges = np.reshape(ridges, batch_shape + (resolution, resolution))
-            binaries = np.reshape(binaries, batch_shape + (resolution, resolution))
+            phis = np.reshape(phis, batch_shape + (final_res, final_res))
+            ridges = np.reshape(ridges, batch_shape + (final_res, final_res))
+            binaries = np.reshape(binaries, batch_shape + (final_res, final_res))
 
-        return phis, ridges, binaries
+        return phis, ridges, binaries, spectral_square
 
 
     def _spectral_images_flat(
@@ -660,7 +661,7 @@ class CharPolyClass:
         
         result = None
         if resolution_enhancement <= 1 or resolution_enhancement is None:
-            result = (phi_flat, ridge_flat, binary_flat)
+            result = (phi_flat, ridge_flat, binary_flat, resolution)
         else: # Apply resolution enhancement
             final_res = resolution * resolution_enhancement
             E_split = CharPolyClass.get_E_array(
@@ -677,7 +678,9 @@ class CharPolyClass:
                     device, resolution_enhancement, method, DOS_filter_kwargs
                 ) for i in range(num_samples)
             )
-            result = zip(*result)
+            phi_flat, ridge_flat, binary_flat = zip(*result)
+            result = (phi_flat, ridge_flat, binary_flat, 
+                      resolution*resolution_enhancement)
         
         return result
 
@@ -783,37 +786,50 @@ class CharPolyClass:
         Returns
         -------
         tuple
-            Tuple of (graphs, indices) where graphs is a list of networkx graphs
-            and indices is an array of indices into the list.
+            Tuple of (graph_flat, param_dict_flat) where graph_flat is a list of
+            spectral graphs and param_dict_flat is a dictionary mapping parameter
+            symbols to their flattened values.
         """
         
         param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
         
         spectral_square, spectral_center, spectral_radius = \
             self.get_spectral_boundaries(param_dict=param_dict, device=device)
+        radius_flat = spectral_radius.ravel()
+        center_flat = spectral_center.reshape(num_samples, 2)
         
         batcher = Parallel(n_jobs=n_jobs, prefer='threads')
 
         # Get spectral images
-        phi_flat, ridge_flat, binary_flat = self._spectral_images_flat(
-            param_dict, spectral_square, num_samples,
-            device, batcher, resolution, resolution_enhancement,
-            method, DOS_filter_kwargs,
-        )
+        phi_flat, ridge_flat, binary_flat, final_res = \
+            self._spectral_images_flat(
+                param_dict, spectral_square, num_samples,
+                device, batcher, resolution, resolution_enhancement,
+                method, DOS_filter_kwargs,
+            )
 
-        final_res = resolution * resolution_enhancement
-        
-        graphs = batcher(
+        graph_flat = batcher(
             delayed(CharPolyClass._get_skeleton_graph)(
                 binary_flat[i], phi_flat[i], ridge_flat[i],
                 skeleton2graph_kwargs, short_edge_threshold, 
-                spectral_radius[i], spectral_center[i], final_res, magnify
+                radius_flat[i], center_flat[i], final_res, magnify
             ) for i in range(num_samples)
         )
 
-        indices = np.arange(num_samples).reshape(batch_shape)
+        # # Create mapping indices from flattened graphs back to original parameter positions
+        # if len(batch_shape) > 1:
+        #     # For multi-dimensional parameters, create index tuples
+        #     multi_indices = np.unravel_index(np.arange(num_samples), batch_shape)
+        #     indices = list(zip(*multi_indices))
+        # else:
+        #     # For 1D or scalar parameters, indices are straightforward
+        #     indices = np.arange(num_samples)
 
-        return graphs, indices
+        param_dict_flat = {}
+        for s in self.params:
+            param_dict_flat[s] = param_dict[s].ravel()
+
+        return graph_flat, param_dict_flat
     
     @staticmethod
     def _get_skeleton_graph(binary, phi, ridge, 

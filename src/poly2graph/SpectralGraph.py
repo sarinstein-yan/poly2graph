@@ -103,7 +103,7 @@ class SpectralGraph:
             raise ValueError("Characteristic polynomial must be a Poly, string, or Matrix.")
 
         self._companion_E()
-        self._spectral_boundaries()
+        self._get_spectral_boundaries()
         self._image_cache = {}
 
     def _init_from_ChP(self) -> None:
@@ -204,7 +204,7 @@ class SpectralGraph:
         H = H_1D_batch_from_hop_dict(hop_dict, N, pbc)
         return H
 
-    def _spectral_boundaries(self, pad_factor = 0.05) -> None:
+    def _get_spectral_boundaries(self, pad_factor = 0.05) -> None:
         """
         Estimate a bounding circle and square around the spectrum in the complex plane
         by diagonalizing a moderate-size finite chain Hamiltonian.

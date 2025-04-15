@@ -59,6 +59,10 @@ print(p2g.__version__)
 
 See the [Poly2Graph Tutorial JupyterNotebook](https://github.com/sarinstein-yan/poly2graph/blob/main/poly2graph_demo.ipynb).
 
+`p2g.SpectralGraph` and `p2g.CharPolyClass` are the two main classes in the package.
+
+`p2g.SpectralGraph` investigates the spectral graph topology of **a specific** given characteristic polynomial or Bloch Hamiltonian. `p2g.CharPolyClass` investigates **a class** of **parametrized** characteristic polynomials or Bloch Hamiltonians, and is optimized for generating spectral properties in parallel.
+
 ```python
 import numpy as np
 import networkx as nx
@@ -71,7 +75,7 @@ k = sp.symbols('k', real=True)
 z, E = sp.symbols('z E', complex=True)
 ```
 
-### A generic **one-band** example:
+### A generic **one-band** example (`p2g.SpectralGraph`):
 
 characteristic polynomial:
 
@@ -273,7 +277,7 @@ plt.tight_layout(); plt.show()
     <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/spectral_graph_one_band.png" width="300" />
 </p>
 
-### A generic **multi-band** example:
+### A generic **multi-band** example (`p2g.SpectralGraph`):
 
 characteristic polynomial (four bands):
 
@@ -471,3 +475,179 @@ The attributes of the first edge
   'avg_dos': 0.10761458, 
   'avg_potential': -0.5068641}
 ```
+
+
+---
+### A generic **multi-band** class (`p2g.CharPolyClass`):
+
+Let us add two parameters `{a,b}` to the aforementioned multi-band example and construct a `p2g.CharPolyClass` object:
+
+```python
+a, b = sp.symbols('a b', real=True)
+
+cp = p2g.CharPolyClass(
+    "z**2 + a/z**2 + b*E*z - E**4", 
+    k=k, z=z, E=E,
+    params={a, b}, # pass parameters as a set
+)
+```
+
+<span style="color:#d73a49;font-weight:bold">>>></span> 
+
+```text
+Derived Bloch Hamiltonian `h_z` with 4 bands.
+```
+
+---
+View a few auto-computed properties
+
+**Characteristic polynomial**:
+
+```python
+cp.ChP
+```
+
+<span style="color:#d73a49;font-weight:bold">>>></span> $\text{Poly}{\left( z^{2} + a \frac{1}{z^{2}} + b zE - E^{4}, z, \frac{1}{z}, E, domain=\mathbb{Z}\left[a, b\right] \right)}$
+
+---
+**Bloch Hamiltonian**:
+
+```python
+cp.h_k
+```
+
+<span style="color:#d73a49;font-weight:bold">>>></span>
+
+$$\begin{bmatrix}
+0 & 0 & 0 & (a + e^{4 i k})e^{- 2 i k} \\
+1 & 0 & 0 & b e^{i k} \\
+0 & 1 & 0 & 0 \\
+0 & 0 & 1 & 0
+\end{bmatrix}$$
+
+```python
+cp.h_z
+```
+
+<span style="color:#d73a49;font-weight:bold">>>></span>
+
+$$\begin{bmatrix}
+0 & 0 & 0 & \frac{a}{z^{2}} + z^{2} \\
+1 & 0 & 0 & b z \\
+0 & 1 & 0 & 0 \\
+0 & 0 & 1 & 0
+\end{bmatrix}$$
+
+---
+**The Frobenius companion matrix of `P(E)(z)`**:
+
+```python
+cp.companion_E
+```
+
+<span style="color:#d73a49;font-weight:bold">>>></span>
+
+$$\begin{bmatrix}
+0 & 0 & 0 & -a \\
+1 & 0 & 0 & 0 \\
+0 & 1 & 0 & E^{4} \\
+0 & 0 & 1 & - E b
+\end{bmatrix}$$
+
+---
+#### **An Array of Spectral Functions**
+
+To get an array of spectral images or spectral graphs, we first prepare the values of the parameters `{a,b}`
+
+```python
+a_array = np.linspace(-2, 1, 6)
+b_array = np.linspace(-1, 1, 6)
+a_grid, b_grid = np.meshgrid(a_array, b_array)
+param_dict = {a: a_grid, b: b_grid}
+print('a_grid shape:', a_grid.shape,
+    '\nb_grid shape:', b_grid.shape)
+```
+
+<span style="color:#d73a49;font-weight:bold">>>></span> 
+
+```text
+a_grid shape: (6, 6)
+b_grid shape: (6, 6)
+```
+
+Note that **the value array of the parameters should have the same shape**, which is also **the shape of the output array of spectral images**
+
+```python
+phi_arr, dos_arr, binaried_dos_arr, spectral_square = \
+    cp.spectral_images(param_dict=param_dict, device='/gpu:0')
+print('phi_arr shape:', phi_arr.shape,
+    '\ndos_arr shape:', dos_arr.shape,
+    '\nbinaried_dos_arr shape:', binaried_dos_arr.shape)
+```
+
+<span style="color:#d73a49;font-weight:bold">>>></span> 
+
+```text
+phi_arr shape: (6, 6, 1024, 1024) 
+dos_arr shape: (6, 6, 1024, 1024) 
+binaried_dos_arr shape: (6, 6, 1024, 1024)
+```
+
+```python
+from mpl_toolkits.axes_grid1 import ImageGrid
+
+fig = plt.figure(figsize=(13, 13))
+grid = ImageGrid(fig, 111, nrows_ncols=(6, 6), axes_pad=0, 
+                 label_mode='L', share_all=True)
+
+for ax, (i, j) in zip(grid, [(i, j) for i in range(6) for j in range(6)]):
+    ax.imshow(phi_arr[i, j], extent=spectral_square[i, j], cmap='terrain')
+    ax.set(xlabel='Re(E)', ylabel='Im(E)')
+    ax.text(
+        0.03, 0.97, f'a = {a_array[i]:.2f}, b = {b_array[j]:.2f}',
+        ha='left', va='top', transform=ax.transAxes,
+        fontsize=10, color='tab:red',
+        bbox=dict(alpha=0.8, facecolor='white')
+    )
+
+plt.tight_layout()
+plt.savefig('./assets/ChP_spectral_potential_grid.png', dpi=72)
+plt.show()
+```
+
+<p align="center">
+    <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/ChP_spectral_potential_grid.png" width="1000" />
+</p>
+
+---
+#### An Array of Spectral Graphs
+
+```python
+graph_flat, param_dict_flat = cp.spectral_graph(
+    param_dict=param_dict, device='/gpu:0',
+    short_edge_threshold=20,
+)
+print(graph_flat, '\n')
+print(param_dict_flat)
+```
+
+```text
+[<networkx.classes.multigraph.MultiGraph object at 0x000001966DFCD190>, 
+<networkx.classes.multigraph.MultiGraph object at 0x000001966DFCECF0>, 
+...
+<networkx.classes.multigraph.MultiGraph object at 0x000001966DFCE750>]
+
+{a: 
+array([-2. , -1.4, -0.8, -0.2,  0.4,  1. , -2. , -1.4, -0.8, -0.2,  0.4,
+        1. , -2. , -1.4, -0.8, -0.2,  0.4,  1. , -2. , -1.4, -0.8, -0.2,
+        0.4,  1. , -2. , -1.4, -0.8, -0.2,  0.4,  1. , -2. , -1.4, -0.8,
+       -0.2,  0.4,  1. ]), 
+b: 
+array([-1. , -1. , -1. , -1. , -1. , -1. , -0.6, -0.6, -0.6, -0.6, -0.6,
+       -0.6, -0.2, -0.2, -0.2, -0.2, -0.2, -0.2,  0.2,  0.2,  0.2,  0.2,
+        0.2,  0.2,  0.6,  0.6,  0.6,  0.6,  0.6,  0.6,  1. ,  1. ,  1. ,
+        1. ,  1. ,  1. ])}
+```
+
+Note that the spectral graph is a `networkx.MultiGraph` object, which cannot be directly returned as a multi-dimensional numpy array of `MultiGraph`, except for the case of 1D array.
+Instead, we return a flattened list of `networkx.MultiGraph` objects, and the accompanying `param_dict_flat` is the dictionary that contains the corresponding flattened parameter values.

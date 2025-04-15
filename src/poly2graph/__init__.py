@@ -19,12 +19,14 @@ __all__ = [
 
     'SpectralGraph',
 
+    'CharPolyClass',
+
     'companion_batch', 'kron_batch', 
     'eig_batch', 'eigvals_batch',
     
     'draw_spectral_graph', 'mark_graph_skeleton'
 ]
-__version__ = '0.1.0'
+__version__ = '0.1.5'
 __author__ = ['Xianquan (Sarinstein) Yan', 'Hakan Akgün']
     
 
@@ -48,5 +50,6 @@ from poly2graph.spectral_graph import (
     spectral_potential_batch,
 )
 from poly2graph.SpectralGraph import SpectralGraph
+from poly2graph.CharPolyClass import CharPolyClass
 from poly2graph.util import companion_batch, kron_batch, eig_batch, eigvals_batch
 from poly2graph.vis import draw_spectral_graph, mark_graph_skeleton
