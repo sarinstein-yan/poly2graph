@@ -78,14 +78,14 @@ class SpectralGraph:
 
         if isinstance(characteristic, sp.Poly):
             self.ChP = characteristic
-            self._init_ChP()
+            self._init_from_ChP()
         elif isinstance(characteristic, str):
             expr = sp.sympify(characteristic, locals={'z': z, 'E': E})
             assert {E, z}.issubset(expr.free_symbols), (
                 f"ChP must include {E} AND {z} as free symbols"
             )
             self.ChP = sp.Poly(expr, z, 1/z, E)
-            self._init_ChP()
+            self._init_from_ChP()
         elif isinstance(characteristic, sp.Matrix):
             free_sym = characteristic.free_symbols
             if self.k in free_sym and self.z not in free_sym:
@@ -98,7 +98,7 @@ class SpectralGraph:
                 raise ValueError(
                     f"Characteristic polynomial must include {k} XOR {z} as a free symbol"
                 )
-            self._init_bloch()
+            self._init_from_bloch()
         else:
             raise ValueError("Characteristic polynomial must be a Poly, string, or Matrix.")
 
@@ -106,7 +106,7 @@ class SpectralGraph:
         self._spectral_boundaries()
         self._image_cache = {}
 
-    def _init_ChP(self) -> None:
+    def _init_from_ChP(self) -> None:
         """
         Internal method to initialize the Bloch Hamiltonian and polynomial data
         from a given characteristic polynomial (ChP).
@@ -141,7 +141,7 @@ class SpectralGraph:
             self.h_z = sp.Matrix.companion(Poly_E.monic()).applyfunc(sp.expand)
         self.h_k = hz2hk_1d(self.h_z, k, z)
 
-    def _init_bloch(self) -> None:
+    def _init_from_bloch(self) -> None:
         """
         Internal method to initialize characteristic polynomial data 
         from a given Bloch Hamiltonian (h_k or h_z).
@@ -307,7 +307,7 @@ class SpectralGraph:
         return phi
 
     @staticmethod
-    def _compute_masks(binary, dilation_radius=2):
+    def _get_masks(binary, dilation_radius=2):
         """
         Compute masks for the binary image and its dilation.
         
@@ -327,7 +327,7 @@ class SpectralGraph:
         return mask1, mask0, mask1_
     
     @staticmethod
-    def _compute_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement):
+    def _get_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement):
         """
         Compute a threshold for the enhanced resolution ridge image.
         
@@ -377,7 +377,7 @@ class SpectralGraph:
         E_imag_ = np.linspace(*E_box[2:], enhanced_resolution)
         E_split = E_real_ + 1j * E_imag_[:, None]
         
-        mask1, mask0, mask1_ = self._compute_masks(binary)
+        mask1, mask0, mask1_ = self._get_masks(binary)
 
         E_block = view_as_blocks(E_split, (resolution_enhancement, resolution_enhancement))
         masked_E_block = E_block[mask1_]
@@ -392,7 +392,7 @@ class SpectralGraph:
         ridge_block = view_as_blocks(ridge_, (resolution_enhancement, resolution_enhancement))
         ridge_block[mask0] = 0
 
-        threshold = self._compute_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement)
+        threshold = self._get_enhanced_threshold(ridge, ridge_block, mask1, mask0, resolution_enhancement)
         binary_ = ridge_ > threshold
         binary_block = view_as_blocks(binary_, (resolution_enhancement, resolution_enhancement))
         binary_block[mask0] = 0
