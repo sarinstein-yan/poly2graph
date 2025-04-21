@@ -30,7 +30,7 @@
 
 ## Installation
 
-First make sure you have installed [`tensorflow`](https://www.tensorflow.org/) according to your machine specifics. This module is tested on `Python >= 3.12`, `tensorflow >=2.10`.
+First make sure you have installed [`tensorflow`](https://www.tensorflow.org/) according to your machine specifics. This module is tested on `Python >= 3.11`, `tensorflow >=2.10`.
 
 `tensorflow` is required for the optimization of computation bottleneck.
 
