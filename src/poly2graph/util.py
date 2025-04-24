@@ -1,5 +1,11 @@
 import numpy as np
-import tensorflow as tf
+
+import logging
+from typing import Literal, Optional
+DeviceStr = Optional[
+    Literal["cpu", "gpu", "gpu:0", "gpu:1",
+            "cuda", "cuda:0", "cuda:1", None]
+]
 
 def companion_batch(a):
     """
@@ -72,109 +78,171 @@ def kron_batch(a, b):
     new_shape = a.shape[:-2] + (a.shape[-2] * b.shape[-2], a.shape[-1] * b.shape[-1])
     return kron.reshape(new_shape)
 
-def eig_batch(array_of_matrices, device='/CPU:0', is_hermitian=False):
-    """
-    Compute the eigenvalues and eigenvectors for a batch of matrices using TensorFlow.
 
-    This function computes the eigen decomposition for a batch of matrices provided as an array.
-    It supports both Hermitian matrices (using tf.linalg.eigh) and general matrices (using tf.linalg.eig).
-    For general matrices, it improves numerical stability by setting near-zero entries (below a tolerance)
-    to zero before computing the eigenvalues and eigenvectors.
+def _parse_device(backend: str, device: DeviceStr) -> Optional[str]:
+    """
+    Convert a user-supplied device string into the object that the active
+    backend expects, or return a sensible default.
 
     Parameters
     ----------
-    array_of_matrices : array-like
-        An array or tensor of shape (..., N, N) representing a batch of square matrices.
-    device : str or tf.device
-        The TensorFlow device (e.g., '/GPU:0' or '/CPU:0') on which the computation is performed.
-    is_hermitian : bool, optional
-        Flag indicating whether the input matrices are Hermitian. If True, uses tf.linalg.eigh.
-        Otherwise, uses tf.linalg.eig with a numerical stability threshold. Default is False.
+    backend : {'tf', 'torch', 'numpy'}
+    device  : str | None
+        Examples the user might pass:
+            • '/GPU:0', '/CPU:0'      (TensorFlow)
+            • 'cuda:0', 'cuda', 'cpu' (PyTorch)
+            • None                    (any backend)
 
     Returns
     -------
-    eigvals_np : np.ndarray
-        A numpy array of eigenvalues with shape matching the batch dimensions and an extra dimension 
-        for eigenvalues.
-    eigvecs_np : np.ndarray
-        A numpy array of eigenvectors with shape matching the batch dimensions and two extra dimensions
-        for the eigenvector matrices.
-
-    Raises
-    ------
-    ValueError
-        If the tensor's dtype is not one of [tf.float32, tf.float64, tf.complex64, tf.complex128].
-
-    Notes
-    -----
-    - For non-Hermitian matrices, the tolerance for setting near-zero values is chosen based on the data type:
-      1e-14 for complex dtypes (tf.float64, tf.complex128) and 1e-6 for float dtypes (tf.float32, tf.float64).
-    - The resulting eigenvalues and eigenvectors are converted to numpy arrays, and the computation is performed
-      on the specified device.
+    backend-specific device handle, or None (NumPy).
     """
-    with tf.device(device):
-        array_of_matrices = tf.convert_to_tensor(array_of_matrices)
+    if backend == "tf":
+        return device or "/CPU:0"            # TensorFlow accepts strings
+    if backend == "torch":
+        import torch
+        if device is None:
+            return torch.device("cpu")
+        dev = device.lower()
+        if "cuda" in dev or "gpu" in dev:
+            # accept '/GPU:0' or 'cuda:0' etc.
+            idx = "".join(ch for ch in dev if ch.isdigit())
+            return torch.device(f"cuda:{idx}" if idx else "cuda")
+        return torch.device("cpu")
+    return None                              # NumPy
+
+def eig_batch(array_of_matrices,
+              device: DeviceStr = None,
+              is_hermitian: bool = False,
+              chop: bool = False):
+    """
+    Batched eigen-decomposition with automatic backend selection.
+
+    The preferred order is:
+        1. TensorFlow  (tf.linalg.eigh / tf.linalg.eig)
+        2. PyTorch     (torch.linalg.eigh / torch.linalg.eig)
+        3. NumPy       (np.linalg.eigh / np.linalg.eig)
+
+    Parameters
+    ----------
+    array_of_matrices : array-like, shape (..., N, N)
+        Real or complex square matrices.
+    device : str | None, optional
+        Device specifier (TF or Torch style).  Ignored for NumPy.
+    is_hermitian : bool, optional
+        If True, use *-eigh; else use *-eig with small-value thresholding.
+    chop : bool, optional
+        If True, small values are set to zero before eigen-decomposition.
+
+    Returns
+    -------
+    eigvals_np : np.ndarray, shape (..., N)
+    eigvecs_np : np.ndarray, shape (..., N, N)
+    """
+    # ------------------------------------------------------------------ #
+    # 1) Try TensorFlow
+    try:
+        import tensorflow as tf
+        backend = "tf"
+    except Exception:                               # pragma: no cover
+        backend = None
+
+    # 2) Try PyTorch
+    if backend is None:
+        try:
+            import torch
+            backend = "torch"
+        except Exception:                           # pragma: no cover
+            backend = None
+
+    # 3) Fallback: NumPy
+    if backend is None:
+        backend = "numpy"
+
+    tol_float64 = 1e-14
+    tol_float32 = 1e-7
+
+    if backend == "tf":
+        import tensorflow as tf
+
+        dev_tf = _parse_device("tf", device)
+        with tf.device(dev_tf):
+            tensor = tf.convert_to_tensor(array_of_matrices)
+
+            if is_hermitian:
+                vals, vecs = tf.linalg.eigh(tensor)
+            else:
+                if chop:
+                    tol = tol_float64 if tensor.dtype in [tf.float64,
+                                                        tf.complex128] else tol_float32
+                    tensor = tf.where(tf.abs(tensor) < tol, 0., tensor)
+                vals, vecs = tf.linalg.eig(tensor)
+
+        return vals.numpy(), vecs.numpy()
+
+    elif backend == "torch":
+        import torch
+        logging.warning("TensorFlow not available; using PyTorch instead.")
+
+        dev_torch = _parse_device("torch", device)
+        tensor = torch.as_tensor(array_of_matrices).to(dev_torch)
 
         if is_hermitian:
-            vals, vecs = tf.linalg.eigh(array_of_matrices)
-        
+            vals, vecs = torch.linalg.eigh(tensor)
         else:
-            # Set near-zero entries to zero for numerical stability.
-            if array_of_matrices.dtype in [tf.float64, tf.complex128]:
-                tol = 1e-14
-            elif array_of_matrices.dtype in [tf.float32, tf.complex64]:
-                tol = 1e-7
-            else: raise ValueError("Unsupported dtype. dtype must be one of [tf.float32, "
-                                      "tf.float64, tf.complex64, tf.complex128].")
-            array_of_matrices = tf.where(tf.abs(array_of_matrices) < tol, 0., array_of_matrices)
-            vals, vecs = tf.linalg.eig(array_of_matrices)
-        
-        # Convert to numpy array; data now on CPU.
-        eigvals_np = vals.numpy(); eigvecs_np = vecs.numpy()
+            if chop:
+                tol = tol_float64 if tensor.dtype in [torch.float64,
+                                                    torch.complex128] else tol_float32
+                tensor = torch.where(tensor.abs() < tol,
+                                    torch.zeros_like(tensor), tensor)
+            vals, vecs = torch.linalg.eig(tensor)
+
+        return vals.cpu().numpy(), vecs.cpu().numpy()
+
+    else:  # ---------- NumPy ------------------------------------------------- #
+        logging.warning("TensorFlow and PyTorch not available; fallback to NumPy.")
+        array = np.asarray(array_of_matrices)
+
+        if is_hermitian:
+            vals, vecs = np.linalg.eigh(array)
+        else:
+            if chop:
+                tol = tol_float64 if array.dtype in [np.float64,
+                                                    np.complex128] else tol_float32
+                array = np.where(np.abs(array) < tol, 0.0, array)
+            vals, vecs = np.linalg.eig(array)
+
+        return vals, vecs
     
-    # # Clear the TensorFlow session/graph state to release GPU memory.
-    # tf.keras.backend.clear_session()
-
-    return eigvals_np, eigvecs_np
-
-
-def eigvals_batch(array_of_matrices, device='/CPU:0', is_hermitian=False):
+def eigvals_batch(array_of_matrices,
+              device: DeviceStr = None,
+              is_hermitian: bool = False,
+              chop: bool = False):
     """
-    Compute the eigenvalues for a batch of matrices using TensorFlow.
+    Batched eigenvalues with automatic backend selection.
 
-    This function computes the eigenvalues for a batch of matrices provided as an array.
-    It supports both Hermitian matrices (using tf.linalg.eigh) and general matrices (using tf.linalg.eig).
-    For general matrices, it improves numerical stability by setting near-zero entries (below a tolerance)
-    to zero before computing the eigenvalues.
+    The preferred order is:
+        1. TensorFlow  (tf.linalg.eigh / tf.linalg.eig)
+        2. PyTorch     (torch.linalg.eigh / torch.linalg.eig)
+        3. NumPy       (np.linalg.eigh / np.linalg.eig)
 
     Parameters
     ----------
-    array_of_matrices : array-like
-        An array or tensor of shape (..., N, N) representing a batch of square matrices.
-    device : str or tf.device
-        The TensorFlow device (e.g., '/GPU:0' or '/CPU:0') on which the computation is performed.
+    array_of_matrices : array-like, shape (..., N, N)
+        Real or complex square matrices.
+    device : str | None, optional
+        Device specifier (TF or Torch style).  Ignored for NumPy.
     is_hermitian : bool, optional
-        Flag indicating whether the input matrices are Hermitian. If True, uses tf.linalg.eigh.
-        Otherwise, uses tf.linalg.eig with a numerical stability threshold. Default is False.
+        If True, use *-eigh; else use *-eig with small-value thresholding.
+    chop : bool, optional
+        If True, small values are set to zero before eigen-decomposition.
 
     Returns
     -------
-    eigvals_np : np.ndarray
-        A numpy array of eigenvalues with shape matching the batch dimensions and an extra dimension 
-        for eigenvalues.
-
-    Raises
-    ------
-    ValueError
-        If the tensor's dtype is not one of [tf.float32, tf.float64, tf.complex64, tf.complex128].
-
-    Notes
-    -----
-    - For non-Hermitian matrices, the tolerance for setting near-zero values is chosen based on the data type:
-      1e-14 for complex dtypes (tf.complex64, tf.complex128) and 1e-6 for float dtypes (tf.float32, tf.float64).
-    - The resulting eigenvalues are converted to numpy arrays, and the computation is performed on the specified device.
+    eigvals_np : np.ndarray, shape (..., N)
     """
-    
-    eigvals_np, _ = eig_batch(array_of_matrices, device=device, is_hermitian=is_hermitian)
-    
-    return eigvals_np
+    vals, _ = eig_batch(array_of_matrices,
+                        device=device,
+                        is_hermitian=is_hermitian,
+                        chop=chop)
+    return vals

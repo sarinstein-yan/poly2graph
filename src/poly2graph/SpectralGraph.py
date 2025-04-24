@@ -1,7 +1,6 @@
 import numpy as np
 import sympy as sp
 import networkx as nx
-import tensorflow as tf
 
 from skimage.morphology import skeletonize, dilation, binary_closing, disk
 from skimage.util import view_as_blocks
@@ -18,7 +17,7 @@ from poly2graph.hamiltonian import (
     expand_hz_as_hop_dict_1d,
     H_1D_batch_from_hop_dict
 )
-from poly2graph.util import companion_batch
+from poly2graph.util import companion_batch, eigvals_batch
 
 from numpy.typing import ArrayLike
 from typing import Union, Optional, Callable, Iterable, TypeVar, Dict, List, Tuple, Sequence
@@ -276,10 +275,8 @@ class SpectralGraph:
         """
         coeff_arr = self._Poly_z_coeff_arr_from_E_arr(E_array)
         companion_arr = companion_batch(coeff_arr)
-        with tf.device(device):
-            companion_tensor = tf.convert_to_tensor(companion_arr)
-            roots = tf.linalg.eigvals(companion_tensor)
-        return roots.numpy()
+        roots = eigvals_batch(companion_arr, device=device)
+        return roots
 
     def spectral_potential_from_E_arr(
         self,
