@@ -108,7 +108,7 @@ def eig_batch(array_of_matrices, device='/CPU:0', is_hermitian=False):
     Notes
     -----
     - For non-Hermitian matrices, the tolerance for setting near-zero values is chosen based on the data type:
-      1e-14 for complex dtypes (tf.complex64, tf.complex128) and 1e-6 for float dtypes (tf.float32, tf.float64).
+      1e-14 for complex dtypes (tf.float64, tf.complex128) and 1e-6 for float dtypes (tf.float32, tf.float64).
     - The resulting eigenvalues and eigenvectors are converted to numpy arrays, and the computation is performed
       on the specified device.
     """
@@ -120,10 +120,10 @@ def eig_batch(array_of_matrices, device='/CPU:0', is_hermitian=False):
         
         else:
             # Set near-zero entries to zero for numerical stability.
-            if array_of_matrices.dtype in [tf.complex64, tf.complex128]:
+            if array_of_matrices.dtype in [tf.float64, tf.complex128]:
                 tol = 1e-14
-            elif array_of_matrices.dtype in [tf.float32, tf.float64]:
-                tol = 1e-6
+            elif array_of_matrices.dtype in [tf.float32, tf.complex64]:
+                tol = 1e-7
             else: raise ValueError("Unsupported dtype. dtype must be one of [tf.float32, "
                                       "tf.float64, tf.complex64, tf.complex128].")
             array_of_matrices = tf.where(tf.abs(array_of_matrices) < tol, 0., array_of_matrices)

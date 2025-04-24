@@ -317,10 +317,10 @@ def hz2hk(h_z, kx, ky, kz, zx=None, zy=None, zz=None):
     for momentum, z in [(kx, zx), (ky, zy), (kz, zz)]:
         if z is not None and z in free_syms:
             # Substituting z with cos(k) + i*sin(k) which is equivalent to exp(i*k).
-            subs_dict[z] = sp.cos(momentum) + sp.I * sp.sin(momentum)
+            subs_dict[z] = sp.exp(sp.I * momentum)
             
     return _apply_func(h_z,
-        lambda expr: sp.simplify(expr.subs(subs_dict))
+        lambda expr: sp.expand(expr.subs(subs_dict))
     )
 
 def expand_hz_as_hop_dict(h_z, zx=None, zy=None, zz=None):
