@@ -397,6 +397,7 @@ class CharPolyClass:
         return roots
 
 
+    # NOTE: computation bottleneck, O[(p+q)**4]. tf is faster than torch, jax, numpy
     def _get_Poly_z_roots_from_coeff_arr(
         self,
         coeff_arr: ArrayLike,
@@ -815,15 +816,6 @@ class CharPolyClass:
                 radius_flat[i], center_flat[i], final_res, magnify
             ) for i in range(num_samples)
         )
-
-        # # Create mapping indices from flattened graphs back to original parameter positions
-        # if len(batch_shape) > 1:
-        #     # For multi-dimensional parameters, create index tuples
-        #     multi_indices = np.unravel_index(np.arange(num_samples), batch_shape)
-        #     indices = list(zip(*multi_indices))
-        # else:
-        #     # For 1D or scalar parameters, indices are straightforward
-        #     indices = np.arange(num_samples)
 
         param_dict_flat = {}
         for s in self.params:

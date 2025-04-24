@@ -76,9 +76,10 @@ def hz2hk_1d(h_z, k, z):
     Returns:
         A sympy expression or Matrix for the Hamiltonian expressed in terms of k.
     """
-    subs_dict = {z: sp.cos(k) + sp.I * sp.sin(k)}
+    # subs_dict = {z: sp.cos(k) + sp.I * sp.sin(k)}
+    subs_dict = {z: sp.exp(sp.I*k)}
     return _apply_func(h_z,
-        lambda expr: sp.simplify(expr.subs(subs_dict))
+        lambda expr: sp.expand(expr.subs(subs_dict))
     )
 
 def expand_hz_as_hop_dict_1d(h_z, z):
