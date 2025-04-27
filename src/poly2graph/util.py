@@ -90,6 +90,7 @@ def _parse_device(backend: str, device: DeviceStr) -> Optional[str]:
     device  : str | None
         Examples the user might pass:
             • '/GPU:0', '/CPU:0'      (TensorFlow)
+            ^ NOTE: TensorFlow's `eig` doesn't have GPU version
             • 'cuda:0', 'cuda', 'cpu' (PyTorch)
             • None                    (any backend)
 

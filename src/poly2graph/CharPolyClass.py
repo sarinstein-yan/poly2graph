@@ -403,7 +403,7 @@ class CharPolyClass:
         device: str = '/CPU:0',
     ) -> np.ndarray:
         """Compute roots of polynomial from coefficient array using TensorFlow."""
-        coeff_arr = np.asarray(coeff_arr)
+        coeff_arr = np.asarray(coeff_arr, dtype=np.complex64)
         companion_arr = companion_batch(coeff_arr)
         roots = eigvals_batch(companion_arr, 
                               device=device, is_hermitian=False)
