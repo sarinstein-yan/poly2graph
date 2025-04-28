@@ -290,9 +290,6 @@ class CharPolyClass:
                 "Parameter values must have the same shape."
             batch_shape = batch_shapes[0]
             num_samples = int(np.prod(batch_shape))
-        # print(f"Hamiltonian Parameters: {params}; "
-        #     f"batch shape {batch_shape}; "
-        #     f"{num_samples} total instances.")
         return param_dict, batch_shape, num_samples
 
 
@@ -403,6 +400,7 @@ class CharPolyClass:
         device: str = '/CPU:0',
     ) -> np.ndarray:
         """Compute roots of polynomial from coefficient array using TensorFlow."""
+        # for moderate hopping range, complex64 is sufficient
         coeff_arr = np.asarray(coeff_arr, dtype=np.complex64)
         companion_arr = companion_batch(coeff_arr)
         roots = eigvals_batch(companion_arr, 
