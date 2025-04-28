@@ -175,7 +175,7 @@ class CharPolyClass:
         if self.num_bands < 1:
             raise ValueError("Characteristic polynomial must be at least one-band.")
         if self.num_bands == 1:
-            self.h_z = sp.Matrix([sp.expand(monic_Poly_E.TC())]) # Tailing coefficient
+            self.h_z = sp.Matrix([sp.expand(-monic_Poly_E.TC())]) # Tailing coefficient
         else:
             self.h_z = sp.Matrix.companion(monic_Poly_E).applyfunc(sp.expand)
 

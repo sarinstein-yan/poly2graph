@@ -587,6 +587,15 @@ class SpectralGraph:
         # Process graph positions
         graph = self._recover_energy_coordinates(graph, scale, center_offset, magnify)
 
+        # Graph-level attributes
+        graph.graph.update({            
+            'polynomial': str(self.ChP.as_expr()),
+            'resolution': resolution,
+            'resolution_enhancement': resolution_enhancement,
+            'method': method,
+            'magnify': magnify
+        })
+
         return graph
         
     def clear_cache(self):
