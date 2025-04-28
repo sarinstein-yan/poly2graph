@@ -857,7 +857,7 @@ class CharPolyClass:
 
         # Process graph positions
         graph = CharPolyClass._recover_energy_coordinates(
-            graph, spectral_center, scale, center_offset, magnify
+            graph, spectral_center, scale, center_offset, final_res, magnify
         )
         return graph
 
@@ -868,6 +868,7 @@ class CharPolyClass:
         spectral_center: np.ndarray,
         scale: float, 
         center_offset: np.ndarray, 
+        final_res: int,
         magnify: float = 1.0
     ) -> nxGraph:
         """Transform graph coordinates from pixel space to energy space."""
@@ -877,13 +878,17 @@ class CharPolyClass:
             
         for node in graph.nodes(data=True):
             if 'pos' in node[1]:
-                pos = np.asarray(node[1]['pos'], dtype=np.float32)
+                pos = node[1]['pos']
+                pos = np.asarray([pos[1], final_res-pos[0]], dtype=np.float32)
                 # Recover the (x, y) coordinates from the 2D array indices
-                new_pos = (pos[::-1] - center_offset) * scale + spectral_center
+                new_pos = (pos - center_offset) * scale + spectral_center
                 node[1]['pos'] = new_pos * magnify
             if 'pts' in node[1]:
-                pts = np.asarray(node[1]['pts'], dtype=np.float32)
-                new_pts = (pts[..., ::-1] - center_offset) * scale + spectral_center
+                pts = node[1]['pts']
+                pts = pts[:, ::-1]
+                pts[:, 1] = final_res - pts[:, 1]
+                pts = np.asarray(pts, dtype=np.float32)
+                new_pts = (pts - center_offset) * scale + spectral_center
                 node[1]['pts'] = new_pts * magnify
 
         for edge in graph.edges(data=True):
@@ -892,8 +897,11 @@ class CharPolyClass:
                 new_weight = weight * scale
                 edge[2]['weight'] = new_weight * magnify
             if 'pts' in edge[2]:
-                pts = np.asarray(edge[2]['pts'], dtype=np.float32)
-                new_pts = (pts[..., ::-1] - center_offset) * scale + spectral_center
+                pts = edge[2]['pts']
+                pts = pts[:, ::-1]
+                pts[:, 1] = final_res - pts[:, 1]
+                pts = np.asarray(pts, dtype=np.float32)
+                new_pts = (pts - center_offset) * scale + spectral_center
                 edge[2]['pts'] = new_pts * magnify
                 
         return graph
