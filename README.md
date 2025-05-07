@@ -649,5 +649,9 @@ array([-1. , -1. , -1. , -1. , -1. , -1. , -0.6, -0.6, -0.6, -0.6, -0.6,
         1. ,  1. ,  1. ])}
 ```
 
-Note that the spectral graph is a `networkx.MultiGraph` object, which cannot be directly returned as a multi-dimensional numpy array of `MultiGraph`, except for the case of 1D array.
-Instead, we return a flattened list of `networkx.MultiGraph` objects, and the accompanying `param_dict_flat` is the dictionary that contains the corresponding flattened parameter values.
+> [!NOTE]
+> The spectral graph is a `networkx.MultiGraph` object, which cannot be directly returned as a multi-dimensional numpy array of `MultiGraph`, except for the case of 1D array.
+> Instead, we return a flattened list of `networkx.MultiGraph` objects, and the accompanying `param_dict_flat` is the dictionary that contains the corresponding flattened parameter values.
+
+> [!TIP]
+> It's recommended to pass the values of the parameters as `vectors` (1D arrays) instead of higher dimensional `ND arrays` to avoid the overhead of reshaping the output and the difficulty to retrieve / postprocess the spectral graphs.
