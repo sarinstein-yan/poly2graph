@@ -598,7 +598,8 @@ class CharPolyClass:
         Returns
         -------
         tuple
-            Tuple of (phis, ridges, binaries) arrays representing the spectral images.
+            Tuple of (phis, ridges, binaries, spectral_square) arrays containing
+            the spectral images and the spectral boundaries box.
         """
 
         param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
