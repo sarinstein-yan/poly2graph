@@ -1,13 +1,34 @@
-# Poly2Graph 
-<!-- [📄 *arXiv*](https://arxiv.org/) -->
+# Poly2Graph
 
-`Poly2Graph` is a Python package for automatic *non-Hermitian spectral graph* construction. It takes in the characteristic polynomial and returns the spectral graph.
+`Poly2Graph` is a Python package for automatic *Hamiltonian spectral graph* construction. It takes in the characteristic polynomial and returns the spectral graph.
 
-> Topological physics is one of the most dynamic and rapidly advancing fields in modern physics. Conventionally, topological classification focuses on eigenstate windings, a concept central to Hermitian topological lattices (e.g., topological insulators). Beyond such notion of topology, we unravel a distinct and diverse graph topology emerging in non-Hermitian systems' energy spectra, featuring a kaleidoscope of exotic shapes like stars, kites, insects, and braids. The spectral graph solely depends on the algebraic form of characteristic polynomial.
+Topological physics is one of the most dynamic and rapidly advancing fields in modern physics. Conventionally, topological classification focuses on eigenstate windings, a concept central to Hermitian topological lattices (e.g., topological insulators). 
+Beyond such notion of topology, we unravel a distinct and diverse graph topology emerging in 1D crystal's energy spectra (under open boundary condition). 
+Particularly, for non-Hermitian crystals, their *spectral graphs* features a kaleidoscope of exotic shapes like stars, kites, insects, and braids.
+
+<!-- <figure align="center">
+  <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/SGs_demo.png" width="600">
+  <figcaption style="text-align:left;">
+    <strong>Poly2Graph pipeline.</strong>
+    <b>(a)</b> Starting from a 1-D crystal Hamiltonian&nbsp;H(z) in momentum space — or, equivalently, its <em>characteristic polynomial</em> P(z,E) = det[ <b>H</b>(z) − E<b>I</b> ]. The crystal’s open-boundary spectrum solely depends on&nbsp;P(z,E).
+    <b>(b)</b> The <em>spectral potential</em> Φ(E) (Ronkin function) is computed from the roots of P(z,E) = 0, following recent advances in non-Bloch band theory.
+    <b>(c)</b> The density of states&nbsp;ρ(E) is obtained as the Laplacian of Φ(E).
+    <b>(d)</b> The spectral graph is extracted from ρ(E) via a morphological computer-vision pipeline. Varying the coefficients of P(z,E) produces diverse graph morphologies in the real domain&nbsp;(d1)–(d3) and imaginary domain&nbsp;(di)–(diii).
+  </figcaption>
+</figure> -->
 
 <p align="center">
-    <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/SGs_demo.png" width="800" />
+  <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/SGs_demo.png"
+       width="800"
+       alt="Poly2Graph pipeline">
 </p>
+
+<strong>Figure: Poly2Graph Pipeline —</strong>
+**(a)** Starting from a 1-D crystal Hamiltonian $H(z)$ in momentum space — or, equivalently, its *characteristic polynomial* $P(z,E)=\det[\mathbf{H}(z)-E\mathbf{I}]$. The crystal’s open-boundary spectrum solely depends on $P(z,E)$.
+**(b)** The *spectral potential* $\Phi(E)$ (Ronkin function) is computed from the roots of $P(z,E)=0$, following recent advances in non-Bloch band theory.
+**(c)** The density of states $\rho(E)$ is obtained as the Laplacian of $\Phi(E)$.
+**(d)** The spectral graph is extracted from $\rho(E)$ via a morphological computer-vision pipeline. Varying the coefficients of $P(z,E)$ produces diverse graph morphologies in the real domain (d1)–(d3) and imaginary domain (di)–(diii).
+
 
 ## Features
 - **Poly2Graph**
