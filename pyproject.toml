@@ -14,17 +14,25 @@ maintainers  = [
     {name = "Xianquan (Sarinstein) Yan", email = "xianquanyan@gmail.com"},
 ]
 keywords = [
-    "non-hermitian spectral graph", "non-bloch band", "algebraic geometry", 
-    "graph representation learning", "transformer", "computer vision", 
-    "morphological image processing"
+    "non-hermitian spectral graph", 
+    "non-bloch band", 
+    "algebraic geometry", 
+    "graph representation learning", 
+    "transformer", 
+    "computer vision", 
+    "morphological image processing",
 ]
 readme = {"file" = "README.md", "content-type" = "text/markdown"}
 license = {file = "LICENSE"}
 requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Environment :: GPU :: NVIDIA CUDA"
 ]
 dependencies = [
@@ -38,7 +46,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-require = ["tensorflow"]  # packages to install manually
+dev = [
+    "tensorflow",
+    "jupyterlab",
+]
 
 [project.urls]
 Homepage = "https://github.com/sarinstein-yan/poly2graph"
@@ -48,7 +59,11 @@ Repository = "https://github.com/sarinstein-yan/poly2graph"
 path = "src/poly2graph/__init__.py"
 
 [tool.hatch.build.targets.sdist]
-exclude = ["assets"]
+exclude = [
+  "assets",
+  "*.ipynb",     # any notebook in project root
+  "**/*.ipynb",  # any notebook in sub-dirs
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/poly2graph"]
