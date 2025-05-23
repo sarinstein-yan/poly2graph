@@ -1,7 +1,6 @@
 import numpy as np
 import sympy as sp
 import networkx as nx
-import tensorflow as tf
 
 from skimage.morphology import skeletonize, dilation, binary_closing, disk
 from skimage.util import view_as_blocks
@@ -22,7 +21,7 @@ from poly2graph.hamiltonian import (
     expand_hz_as_hop_dict_1d,
     H_1D_batch_from_hop_dict
 )
-from poly2graph.util import companion_batch, kron_batch, eig_batch, eigvals_batch
+from poly2graph.util import companion_batch, eigvals_batch
 
 from numpy.typing import ArrayLike
 from typing import Union, Optional, Callable, Iterable, TypeVar, Set, Dict, Tuple, List, TypeVar
@@ -176,7 +175,7 @@ class CharPolyClass:
         if self.num_bands < 1:
             raise ValueError("Characteristic polynomial must be at least one-band.")
         if self.num_bands == 1:
-            self.h_z = sp.Matrix([sp.expand(monic_Poly_E.TC())]) # Tailing coefficient
+            self.h_z = sp.Matrix([sp.expand(-monic_Poly_E.TC())]) # Tailing coefficient
         else:
             self.h_z = sp.Matrix.companion(monic_Poly_E).applyfunc(sp.expand)
 
@@ -291,9 +290,6 @@ class CharPolyClass:
                 "Parameter values must have the same shape."
             batch_shape = batch_shapes[0]
             num_samples = int(np.prod(batch_shape))
-        # print(f"Hamiltonian Parameters: {params}; "
-        #     f"batch shape {batch_shape}; "
-        #     f"{num_samples} total instances.")
         return param_dict, batch_shape, num_samples
 
 
@@ -397,18 +393,19 @@ class CharPolyClass:
         return roots
 
 
+    # NOTE: computation bottleneck, O[(p+q)**4]. tf is faster than torch, jax, numpy
     def _get_Poly_z_roots_from_coeff_arr(
         self,
         coeff_arr: ArrayLike,
         device: str = '/CPU:0',
     ) -> np.ndarray:
         """Compute roots of polynomial from coefficient array using TensorFlow."""
-        coeff_arr = np.asarray(coeff_arr)
+        # for moderate hopping range, complex64 is sufficient
+        coeff_arr = np.asarray(coeff_arr, dtype=np.complex64)
         companion_arr = companion_batch(coeff_arr)
-        with tf.device(device):
-            companion_tensor = tf.convert_to_tensor(companion_arr)
-            roots = tf.linalg.eigvals(companion_tensor)
-        return roots.numpy()
+        roots = eigvals_batch(companion_arr, 
+                              device=device, is_hermitian=False)
+        return roots
 
 
     # --- Spectral Boundaries --- #
@@ -475,7 +472,8 @@ class CharPolyClass:
         Uses eigenvalues of a finite chain to determine spectral boundaries.
         """
         finite_chain = self.real_space_H(param_dict=param_dict)
-        E_arr = eigvals_batch(finite_chain, device, is_hermitian=False)
+        E_arr = eigvals_batch(finite_chain, 
+                              device=device, is_hermitian=False, chop=True)
         
         re_min, re_max = np.amin(E_arr.real, axis=-1), np.amax(E_arr.real, axis=-1)
         im_min, im_max = np.amin(E_arr.imag, axis=-1), np.amax(E_arr.imag, axis=-1)
@@ -600,7 +598,8 @@ class CharPolyClass:
         Returns
         -------
         tuple
-            Tuple of (phis, ridges, binaries) arrays representing the spectral images.
+            Tuple of (phis, ridges, binaries, spectral_square) arrays containing
+            the spectral images and the spectral boundaries box.
         """
 
         param_dict, batch_shape, num_samples = self._process_params_dict(param_dict)
@@ -816,15 +815,6 @@ class CharPolyClass:
             ) for i in range(num_samples)
         )
 
-        # # Create mapping indices from flattened graphs back to original parameter positions
-        # if len(batch_shape) > 1:
-        #     # For multi-dimensional parameters, create index tuples
-        #     multi_indices = np.unravel_index(np.arange(num_samples), batch_shape)
-        #     indices = list(zip(*multi_indices))
-        # else:
-        #     # For 1D or scalar parameters, indices are straightforward
-        #     indices = np.arange(num_samples)
-
         param_dict_flat = {}
         for s in self.params:
             param_dict_flat[s] = param_dict[s].ravel()
@@ -868,7 +858,7 @@ class CharPolyClass:
 
         # Process graph positions
         graph = CharPolyClass._recover_energy_coordinates(
-            graph, spectral_center, scale, center_offset, magnify
+            graph, spectral_center, scale, center_offset, final_res, magnify
         )
         return graph
 
@@ -879,6 +869,7 @@ class CharPolyClass:
         spectral_center: np.ndarray,
         scale: float, 
         center_offset: np.ndarray, 
+        final_res: int,
         magnify: float = 1.0
     ) -> nxGraph:
         """Transform graph coordinates from pixel space to energy space."""
@@ -888,13 +879,17 @@ class CharPolyClass:
             
         for node in graph.nodes(data=True):
             if 'pos' in node[1]:
-                pos = np.asarray(node[1]['pos'], dtype=np.float32)
+                pos = node[1]['pos']
+                pos = np.asarray([pos[1], final_res-pos[0]], dtype=np.float32)
                 # Recover the (x, y) coordinates from the 2D array indices
-                new_pos = (pos[::-1] - center_offset) * scale + spectral_center
+                new_pos = (pos - center_offset) * scale + spectral_center
                 node[1]['pos'] = new_pos * magnify
             if 'pts' in node[1]:
-                pts = np.asarray(node[1]['pts'], dtype=np.float32)
-                new_pts = (pts[..., ::-1] - center_offset) * scale + spectral_center
+                pts = node[1]['pts']
+                pts = pts[:, ::-1]
+                pts[:, 1] = final_res - pts[:, 1]
+                pts = np.asarray(pts, dtype=np.float32)
+                new_pts = (pts - center_offset) * scale + spectral_center
                 node[1]['pts'] = new_pts * magnify
 
         for edge in graph.edges(data=True):
@@ -903,8 +898,11 @@ class CharPolyClass:
                 new_weight = weight * scale
                 edge[2]['weight'] = new_weight * magnify
             if 'pts' in edge[2]:
-                pts = np.asarray(edge[2]['pts'], dtype=np.float32)
-                new_pts = (pts[..., ::-1] - center_offset) * scale + spectral_center
+                pts = edge[2]['pts']
+                pts = pts[:, ::-1]
+                pts[:, 1] = final_res - pts[:, 1]
+                pts = np.asarray(pts, dtype=np.float32)
+                new_pts = (pts - center_offset) * scale + spectral_center
                 edge[2]['pts'] = new_pts * magnify
                 
         return graph

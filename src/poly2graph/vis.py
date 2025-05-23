@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
-from .skeleton2graph import skeleton2graph
-from .spectral_graph import contract_close_nodes, add_edges_within_threshold
+from poly2graph.skeleton2graph import skeleton2graph
+from poly2graph.spectral_graph import contract_close_nodes, add_edges_within_threshold
 from skimage.morphology import skeletonize
 
 from numpy.typing import ArrayLike

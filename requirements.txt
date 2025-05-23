@@ -1,8 +1,0 @@
-numpy
-sympy
-numba
-matplotlib
-networkx
-scikit-image
-scikit-learn
-tqdm

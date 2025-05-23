@@ -1,20 +1,41 @@
-# Poly2Graph 
-<!-- [📄 *arXiv*](https://arxiv.org/) -->
+# Poly2Graph
 
-`Poly2Graph` is a Python package for automatic *non-Hermitian spectral graph* construction. It takes in the characteristic polynomial and returns the spectral graph.
+`Poly2Graph` is a Python package for automatic *Hamiltonian spectral graph* construction. It takes in the characteristic polynomial and returns the spectral graph.
 
-> Topological physics is one of the most dynamic and rapidly advancing fields in modern physics. Conventionally, topological classification focuses on eigenstate windings, a concept central to Hermitian topological lattices (e.g., topological insulators). Beyond such notion of topology, we unravel a distinct and diverse graph topology emerging in non-Hermitian systems' energy spectra, featuring a kaleidoscope of exotic shapes like stars, kites, insects, and braids. The spectral graph solely depends on the algebraic form of characteristic polynomial.
+Topological physics is one of the most dynamic and rapidly advancing fields in modern physics. Conventionally, topological classification focuses on eigenstate windings, a concept central to Hermitian topological lattices (e.g., topological insulators). 
+Beyond such notion of topology, we unravel a distinct and diverse graph topology emerging in 1D crystal's energy spectra (under open boundary condition). 
+Particularly, for non-Hermitian crystals, their *spectral graphs* features a kaleidoscope of exotic shapes like stars, kites, insects, and braids.
+
+<!-- <figure align="center">
+  <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/SGs_demo.png" width="600">
+  <figcaption style="text-align:left;">
+    <strong>Poly2Graph pipeline.</strong>
+    <b>(a)</b> Starting from a 1-D crystal Hamiltonian&nbsp;H(z) in momentum space — or, equivalently, its <em>characteristic polynomial</em> P(z,E) = det[ <b>H</b>(z) − E<b>I</b> ]. The crystal’s open-boundary spectrum solely depends on&nbsp;P(z,E).
+    <b>(b)</b> The <em>spectral potential</em> Φ(E) (Ronkin function) is computed from the roots of P(z,E) = 0, following recent advances in non-Bloch band theory.
+    <b>(c)</b> The density of states&nbsp;ρ(E) is obtained as the Laplacian of Φ(E).
+    <b>(d)</b> The spectral graph is extracted from ρ(E) via a morphological computer-vision pipeline. Varying the coefficients of P(z,E) produces diverse graph morphologies in the real domain&nbsp;(d1)–(d3) and imaginary domain&nbsp;(di)–(diii).
+  </figcaption>
+</figure> -->
 
 <p align="center">
-    <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/SGs_demo.png" width="800" />
+  <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/SGs_demo.png"
+       width="800"
+       alt="Poly2Graph pipeline">
 </p>
+
+<strong>Figure: Poly2Graph Pipeline —</strong>
+**(a)** Starting from a 1-D crystal Hamiltonian $H(z)$ in momentum space — or, equivalently, its *characteristic polynomial* $P(z,E)=\det[\mathbf{H}(z)-E\mathbf{I}]$. The crystal’s open-boundary spectrum solely depends on $P(z,E)$.
+**(b)** The *spectral potential* $\Phi(E)$ (Ronkin function) is computed from the roots of $P(z,E)=0$, following recent advances in non-Bloch band theory.
+**(c)** The density of states $\rho(E)$ is obtained as the Laplacian of $\Phi(E)$.
+**(d)** The spectral graph is extracted from $\rho(E)$ via a morphological computer-vision pipeline. Varying the coefficients of $P(z,E)$ produces diverse graph morphologies in the real domain (d1)–(d3) and imaginary domain (di)–(diii).
+
 
 ## Features
 - **Poly2Graph**
   1. High-performance
      - Fast construction of spectral graph from any one-dimensional models
      - Adaptive resolution to reduce floating operation cost and memory usage
-     - Computation bottleneck can be accelerated on GPU, TPU, and any other devices that `tensorflow` supports
+     - Automatic backend for computation bottleneck. If `tensorflow` / `torch` is available, any device (e.g. '/GPU:0', '/TPU:0', 'cuda:0', etc.) that they support can be used for acceleration.
   2. Cover generic topological lattices
      - Support generic one-band and multi-band models
      - Flexible multiple input choices, be they characteristic polynomials or Bloch Hamiltonians; formats include strings, `sympy.Poly`, and `sympy.Matrix`
@@ -30,10 +51,6 @@
 
 ## Installation
 
-First make sure you have installed [`tensorflow`](https://www.tensorflow.org/) according to your machine specifics. This module is tested on `Python >= 3.12`, `tensorflow >=2.10`.
-
-`tensorflow` is required for the optimization of computation bottleneck.
-
 You can install the package via pip:
 
 ```bash
@@ -48,6 +65,9 @@ $ cd poly2graph
 $ pip install .
 ```
 
+Optionally, if [`TensorFlow`](https://www.tensorflow.org/install) or [`PyTorch`](https://pytorch.org/get-started/locally/) is available, `poly2graph` will make use of them automatically to accelerate the computation bottleneck. Priority: `tensorflow` > `torch` > `numpy`.
+
+This module is tested on `Python >= 3.11`.
 Check the installation:
 
 ```python
@@ -66,7 +86,6 @@ See the [Poly2Graph Tutorial JupyterNotebook](https://github.com/sarinstein-yan/
 ```python
 import numpy as np
 import networkx as nx
-import tensorflow as tf
 import sympy as sp
 import matplotlib.pyplot as plt
 
@@ -236,8 +255,7 @@ plt.tight_layout(); plt.show()
 - Graph Skeleton (Binarized DOS)
 
 ```python
-phi, dos, binaried_dos = sg.spectral_images(device='/gpu:0') # default is '/cpu:0'
-# the computation bottleneck is implemented in tensorflow
+phi, dos, binaried_dos = sg.spectral_images()
 
 fig, axes = plt.subplots(1, 3, figsize=(8, 3), sharex=True, sharey=True)
 axes[0].imshow(phi, extent=sg.spectral_square, cmap='terrain')
@@ -258,11 +276,7 @@ plt.show()
 #### The spectral graph $\mathcal{G}$
 
 ```python
-graph = sg.spectral_graph(
-    device='/gpu:0', # default is '/cpu:0'
-    short_edge_threshold=20, 
-    # ^ node pairs or edges with distance < threshold pixels are merged
-)
+graph = sg.spectral_graph()
 
 fig, ax = plt.subplots(figsize=(3, 3))
 pos = nx.get_node_attributes(graph, 'pos')
@@ -276,6 +290,18 @@ plt.tight_layout(); plt.show()
 <p align="center">
     <img src="https://raw.githubusercontent.com/sarinstein-yan/poly2graph/main/assets/spectral_graph_one_band.png" width="300" />
 </p>
+
+
+> [!TIP]
+> If `tensorflow` or `torch` is available, `poly2graph` will automatically use them and run on **CPU** by default. If other device, e.g. GPU / TPU is available, one can pass `device = {device string}` to the method `spectral_images` and `spectral_graph`:
+> ```python
+> SpectralGraph.spectral_images(device='/cpu:0')
+> SpectralGraph.spectral_graph(device='/gpu:1')
+> SpectralGraph.spectral_images(device='cpu')
+> SpectralGraph.spectral_graph(device='cuda:0')
+> ...
+> ```
+> However, some functions may not have gpu kernel in `tf`/`torch`, in which case the computation will fallback to CPU.
 
 ### A generic **multi-band** example (`p2g.SpectralGraph`):
 
@@ -390,8 +416,7 @@ plt.tight_layout(); plt.show()
 #### **The Set of Spectral Functions**
 
 ```python
-phi_multi, dos_multi, binaried_dos_multi = sg_multi.spectral_images(device='/gpu:0') # default is '/cpu:0'
-# the computation bottleneck is implemented in tensorflow
+phi_multi, dos_multi, binaried_dos_multi = sg_multi.spectral_images(device='/cpu:0')
 
 fig, axes = plt.subplots(1, 3, figsize=(8, 3), sharex=True, sharey=True)
 axes[0].imshow(phi_multi, extent=sg_multi.spectral_square, cmap='terrain')
@@ -412,7 +437,6 @@ plt.tight_layout(); plt.show()
 
 ```python
 graph_multi = sg_multi.spectral_graph(
-    device='/gpu:0', # default is '/cpu:0'
     short_edge_threshold=20, 
     # ^ node pairs or edges with distance < threshold pixels are merged
 )
@@ -579,7 +603,7 @@ Note that **the value array of the parameters should have the same shape**, whic
 
 ```python
 phi_arr, dos_arr, binaried_dos_arr, spectral_square = \
-    cp.spectral_images(param_dict=param_dict, device='/gpu:0')
+    cp.spectral_images(param_dict=param_dict)
 print('phi_arr shape:', phi_arr.shape,
     '\ndos_arr shape:', dos_arr.shape,
     '\nbinaried_dos_arr shape:', binaried_dos_arr.shape)
@@ -623,10 +647,7 @@ plt.show()
 #### An Array of Spectral Graphs
 
 ```python
-graph_flat, param_dict_flat = cp.spectral_graph(
-    param_dict=param_dict, device='/gpu:0',
-    short_edge_threshold=20,
-)
+graph_flat, param_dict_flat = cp.spectral_graph(param_dict=param_dict)
 print(graph_flat, '\n')
 print(param_dict_flat)
 ```
@@ -649,5 +670,9 @@ array([-1. , -1. , -1. , -1. , -1. , -1. , -0.6, -0.6, -0.6, -0.6, -0.6,
         1. ,  1. ,  1. ])}
 ```
 
-Note that the spectral graph is a `networkx.MultiGraph` object, which cannot be directly returned as a multi-dimensional numpy array of `MultiGraph`, except for the case of 1D array.
-Instead, we return a flattened list of `networkx.MultiGraph` objects, and the accompanying `param_dict_flat` is the dictionary that contains the corresponding flattened parameter values.
+> [!NOTE]
+> The spectral graph is a `networkx.MultiGraph` object, which cannot be directly returned as a multi-dimensional numpy array of `MultiGraph`, except for the case of 1D array.
+> Instead, we return a flattened list of `networkx.MultiGraph` objects, and the accompanying `param_dict_flat` is the dictionary that contains the corresponding flattened parameter values.
+
+> [!TIP]
+> It's recommended to pass the values of the parameters as `vectors` (1D arrays) instead of higher dimensional `ND arrays` to avoid the overhead of reshaping the output and the difficulty to retrieve / postprocess the spectral graphs.
