@@ -1,5 +1,7 @@
 # Poly2Graph
 
+[![PyPI](https://img.shields.io/pypi/v/poly2graph)](https://pypi.org/project/poly2graph/)
+
 `Poly2Graph` is a Python package for automatic *Hamiltonian spectral graph* construction. It takes in the characteristic polynomial and returns the spectral graph.
 
 Topological physics is one of the most dynamic and rapidly advancing fields in modern physics. Conventionally, topological classification focuses on eigenstate windings, a concept central to Hermitian topological lattices (e.g., topological insulators). 
