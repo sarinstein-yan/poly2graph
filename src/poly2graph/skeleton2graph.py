@@ -199,7 +199,8 @@ def skeleton2graph(
     
     full : bool, optional, default: True
         If True, the graph nodes include the rounded coordinate arrays of the 
-        original points. If False, the nodes include the full coordinates.
+        original points and the edge `pts` attribute will contain the coordinates
+        of two endpoints.
 
     Potential_image : numpy.ndarray, optional
         A 2D image of the spectral potential landscape values. If provided,
