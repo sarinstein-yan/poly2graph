@@ -1,5 +1,9 @@
 # Poly2Graph
 
+[![arXiv](https://img.shields.io/badge/arXiv-2412.00568---?logo=arXiv&labelColor=b31b1b&color=grey)](https://arxiv.org/abs/2506.08618)
+[![PyPI](https://img.shields.io/pypi/v/poly2graph)](https://pypi.org/project/poly2graph/)
+<a target="_blank" href="https://colab.research.google.com/github/sarinstein-yan/poly2graph/blob/main/poly2graph_demo.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+
 `Poly2Graph` is a Python package for automatic *Hamiltonian spectral graph* construction. It takes in the characteristic polynomial and returns the spectral graph.
 
 Topological physics is one of the most dynamic and rapidly advancing fields in modern physics. Conventionally, topological classification focuses on eigenstate windings, a concept central to Hermitian topological lattices (e.g., topological insulators). 
@@ -676,3 +680,19 @@ array([-1. , -1. , -1. , -1. , -1. , -1. , -0.6, -0.6, -0.6, -0.6, -0.6,
 
 > [!TIP]
 > It's recommended to pass the values of the parameters as `vectors` (1D arrays) instead of higher dimensional `ND arrays` to avoid the overhead of reshaping the output and the difficulty to retrieve / postprocess the spectral graphs.
+
+
+## Citation
+If you find this work useful, please cite our paper:
+
+```bibtex
+@misc{yan2025hsg12mlargescalespatialmultigraph,
+      title={HSG-12M: A Large-Scale Spatial Multigraph Dataset}, 
+      author={Xianquan Yan and Hakan Akgün and Kenji Kawaguchi and N. Duane Loh and Ching Hua Lee},
+      year={2025},
+      eprint={2506.08618},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2506.08618}, 
+}
+```
