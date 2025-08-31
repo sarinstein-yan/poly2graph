@@ -15,10 +15,10 @@ maintainers  = [
 ]
 keywords = [
     "non-hermitian spectral graph", 
+    "Hamiltonian spectral graph", 
     "non-bloch band", 
     "algebraic geometry", 
     "graph representation learning", 
-    "transformer", 
     "computer vision", 
     "morphological image processing",
 ]

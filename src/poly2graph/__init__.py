@@ -26,7 +26,7 @@ __all__ = [
     
     'draw_spectral_graph', 'mark_graph_skeleton'
 ]
-__version__ = '0.1.7'
+__version__ = '0.2.0'
 __author__ = ['Xianquan (Sarinstein) Yan', 'Hakan Akgün']
     
 

@@ -362,12 +362,12 @@ def spectral_potential_batch(
         # the difference of the largest two inverse skin depths (kappa)
         kappas = -np.log(np.sort(np.abs(z_arr), axis=-1))
         kappa_diffs = kappas[..., :-1] - kappas[..., 1:]
-        phi = kappa_diffs[..., 0]
+        phi = - kappa_diffs[..., -q]
     elif method.lower() == 'log_diff':
         # Log difference of the two smallest |z| values
         zs = np.sort(np.abs(z_arr), axis=-1)
-        min_z_diffs = zs[..., 1] - zs[..., 0]
-        phi = np.log(min_z_diffs / np.max(min_z_diffs))
+        min_z_diffs = zs[..., -q] - zs[..., -q-1]
+        phi = - np.log(min_z_diffs / np.max(min_z_diffs))
         # Replace NaN values (which may occur due to division by zero) with the maximum finite value.
         phi[np.isnan(phi)] = np.nanmax(phi)
     else:

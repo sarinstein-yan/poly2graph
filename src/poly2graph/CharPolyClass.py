@@ -904,7 +904,7 @@ class CharPolyClass:
                 pts = np.asarray(pts, dtype=np.float32)
                 new_pts = (pts - center_offset) * scale + spectral_center
                 edge[2]['pts'] = new_pts * magnify
-                
+
         return graph
 
 
