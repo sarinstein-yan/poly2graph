@@ -2,7 +2,7 @@
 
 [![arXiv](https://img.shields.io/badge/arXiv-2412.00568---?logo=arXiv&labelColor=b31b1b&color=grey)](https://arxiv.org/abs/2506.08618)
 [![PyPI](https://img.shields.io/pypi/v/poly2graph)](https://pypi.org/project/poly2graph/)
-<a target="_blank" href="https://colab.research.google.com/github/sarinstein-yan/poly2graph/blob/main/poly2graph_demo.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+<a target="_blank" href="https://colab.research.google.com/github/sarinstein-yan/poly2graph/blob/main/getting_started.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
 `Poly2Graph` is a Python package for automatic *Hamiltonian spectral graph* construction. It takes in the characteristic polynomial and returns the spectral graph.
 
@@ -81,7 +81,7 @@ print(p2g.__version__)
 
 ## Usage
 
-See the [Poly2Graph Tutorial JupyterNotebook](https://github.com/sarinstein-yan/poly2graph/blob/main/poly2graph_demo.ipynb).
+See the [Poly2Graph Tutorial JupyterNotebook](https://github.com/sarinstein-yan/poly2graph/blob/main/getting_started.ipynb).
 
 `p2g.SpectralGraph` and `p2g.CharPolyClass` are the two main classes in the package.
 
