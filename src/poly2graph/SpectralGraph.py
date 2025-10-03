@@ -139,6 +139,7 @@ class SpectralGraph:
         else:
             self.h_z = sp.Matrix.companion(Poly_E.monic()).applyfunc(sp.expand)
         self.h_k = hz2hk_1d(self.h_z, k, z)
+        print(f"[{self.__class__.__name__}] Derived Bloch Hamiltonian `h_z` with {self.num_bands} bands.")
 
     def _init_from_bloch(self) -> None:
         """
@@ -157,6 +158,7 @@ class SpectralGraph:
         self.Poly_E_coeff = Poly_E.all_coeffs()
         self.num_bands = Poly_E.degree()
         self.ChP = sp.Poly(Poly_E.as_expr(), z, 1/z, E)
+        print(f"[{self.__class__.__name__}] Derived Characteristic polynomial `ChP` with {self.num_bands} bands.")
 
     def _companion_E(self) -> None:
         """

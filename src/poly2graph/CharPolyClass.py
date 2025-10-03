@@ -180,7 +180,7 @@ class CharPolyClass:
             self.h_z = sp.Matrix.companion(monic_Poly_E).applyfunc(sp.expand)
 
         self.h_k = hz2hk_1d(self.h_z, k, z)
-        print(f"Derived Bloch Hamiltonian `h_z` with {self.num_bands} bands.")
+        print(f"[{self.__class__.__name__}] Derived Bloch Hamiltonian `h_z` with {self.num_bands} bands.")
 
 
     def _init_from_bloch(self) -> None:
@@ -196,7 +196,7 @@ class CharPolyClass:
         Poly_E_expr = Poly_E_pure.as_expr().xreplace({Poly_E_pure.gens[0]: E})
         # Define the full ChP including z dependencies
         self.ChP = sp.Poly(Poly_E_expr, z, 1/z, E) # Define gens explicitly
-        print(f"Derived Characteristic polynomial `ChP` with {self.num_bands} bands.")
+        print(f"[{self.__class__.__name__}] Derived Characteristic polynomial `ChP` with {self.num_bands} bands.")
 
 
     def _prepare_Poly_z(self) -> None:
