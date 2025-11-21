@@ -250,13 +250,26 @@ class SpectralGraph:
             (*E_array.shape, len(self.Poly_z_coeff)), dtype=np.complex128
         )
         for i, coeff in enumerate(self.Poly_z_coeff):
-            if coeff.free_symbols == set():
-                coeff_arr[..., i] = coeff
-            elif coeff.free_symbols == {self.E}:
-                f = sp.lambdify(self.E, coeff, modules='numpy')
-                coeff_arr[..., i] = f(E_array)
+            free_syms = coeff.free_symbols
+
+            if not free_syms:
+                coeff_arr[..., i] = complex(coeff)
             else:
-                raise ValueError("Poly_z_coeff must be a function of E only")
+                if len(free_syms) == 1:
+                    sym = list(free_syms)[0]
+                    if sym.name == self.E.name:
+                        f = sp.lambdify(sym, coeff, modules='numpy')
+                        coeff_arr[..., i] = f(E_array)
+                    else:
+                        raise ValueError(
+                            f"Poly_z_coeff contains an unexpected symbol: {sym}. "
+                            f"Expected symbol with name: {self.E.name}"
+                        )
+                else:
+                    raise ValueError(
+                        f"Poly_z_coeff must be a function of E only. "
+                        f"Found multiple symbols: {free_syms}"
+                    )
         return coeff_arr
 
     def Poly_z_roots_from_E_arr(
