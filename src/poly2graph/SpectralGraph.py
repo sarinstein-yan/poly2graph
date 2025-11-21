@@ -176,7 +176,8 @@ class SpectralGraph:
         Poly_z = sp.Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
         self.Poly_z_coeff = Poly_z.all_coeffs()
         # Companion matrix of P(E)(z) for efficient root finding
-        self.companion_E = sp.Matrix.companion(Poly_z.monic()).applyfunc(sp.expand)
+        Poly_z_monic_coeff = sp.nsimplify(Poly_z.monic().as_expr(), rational=True)
+        self.companion_E = sp.Matrix.companion(sp.Poly(Poly_z_monic_coeff, z)).applyfunc(sp.expand)
 
     def real_space_H(
         self,
