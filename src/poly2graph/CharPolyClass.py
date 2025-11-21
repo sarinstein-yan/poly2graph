@@ -211,8 +211,8 @@ class CharPolyClass:
         Poly_z = sp.Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
         self.Poly_z_coeff = Poly_z.all_coeffs()
         # Companion matrix of P(E)(z) for efficient root finding
-        monic_Poly_z = Poly_z.monic()
-        self.companion_E = sp.Matrix.companion(monic_Poly_z).applyfunc(sp.expand)
+        Poly_z_monic_coeff = sp.nsimplify(Poly_z.monic().as_expr(), rational=True)
+        self.companion_E = sp.Matrix.companion(sp.Poly(Poly_z_monic_coeff, z)).applyfunc(sp.expand)
         # Lambdify coefficients for numerical evaluation later
         self._lambdify_Poly_z_coeffs()
 
