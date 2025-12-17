@@ -48,7 +48,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "tensorflow",
-    "jupyterlab",
+    "jupyter",
 ]
 
 [project.urls]
