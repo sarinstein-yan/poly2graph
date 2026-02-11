@@ -1,6 +1,7 @@
 # Poly2Graph
 
 [![arXiv](https://img.shields.io/badge/arXiv-2412.00568---?logo=arXiv&labelColor=b31b1b&color=grey)](https://arxiv.org/abs/2506.08618)
+[![ICLR 2026](https://img.shields.io/badge/ICLR-2026---?logo=ICLR&labelColor=3b5998&color=grey)](https://openreview.net/forum?id=YxuKCME576)
 [![PyPI](https://img.shields.io/pypi/v/poly2graph)](https://pypi.org/project/poly2graph/)
 <a target="_blank" href="https://colab.research.google.com/github/sarinstein-yan/poly2graph/blob/main/getting_started.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
@@ -686,10 +687,10 @@ array([-1. , -1. , -1. , -1. , -1. , -1. , -0.6, -0.6, -0.6, -0.6, -0.6,
 If you find this work useful, please cite our paper:
 
 ```bibtex
-@misc{yan2025hsg12mlargescalespatialmultigraph,
-      title={HSG-12M: A Large-Scale Spatial Multigraph Dataset}, 
+@misc{yan2026hsg12mlargescalebenchmarkspatial,
+      title={HSG-12M: A Large-Scale Benchmark of Spatial Multigraphs from the Energy Spectra of Non-Hermitian Crystals}, 
       author={Xianquan Yan and Hakan Akgün and Kenji Kawaguchi and N. Duane Loh and Ching Hua Lee},
-      year={2025},
+      year={2026},
       eprint={2506.08618},
       archivePrefix={arXiv},
       primaryClass={cs.LG},
