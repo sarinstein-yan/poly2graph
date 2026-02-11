@@ -1,6 +1,6 @@
 # Poly2Graph
 
-[![arXiv](https://img.shields.io/badge/arXiv-2412.00568---?logo=arXiv&labelColor=b31b1b&color=grey)](https://arxiv.org/abs/2506.08618)
+[![arXiv](https://img.shields.io/badge/arXiv-2506.08618---?logo=arXiv&labelColor=b31b1b&color=grey)](https://arxiv.org/abs/2506.08618)
 [![ICLR 2026](https://img.shields.io/badge/ICLR-2026---?logo=ICLR&labelColor=3b5998&color=grey)](https://openreview.net/forum?id=YxuKCME576)
 [![PyPI](https://img.shields.io/pypi/v/poly2graph)](https://pypi.org/project/poly2graph/)
 <a target="_blank" href="https://colab.research.google.com/github/sarinstein-yan/poly2graph/blob/main/getting_started.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
@@ -694,6 +694,6 @@ If you find this work useful, please cite our paper:
       eprint={2506.08618},
       archivePrefix={arXiv},
       primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2506.08618}, 
+      url={https://arxiv.org/abs/2506.08618},
 }
 ```
