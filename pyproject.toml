@@ -49,6 +49,7 @@ dependencies = [
 dev = [
     "tensorflow",
     "jupyter",
+    "plotly",
 ]
 
 [project.urls]

@@ -67,7 +67,8 @@ or clone the repository and install it manually:
 ```bash
 $ git clone https://github.com/sarinstein-yan/poly2graph.git
 $ cd poly2graph
-$ pip install .
+$ pip install -e .
+# Or `$ pip install .[dev]` to install the full dependencies
 ```
 
 Optionally, if [`TensorFlow`](https://www.tensorflow.org/install) or [`PyTorch`](https://pytorch.org/get-started/locally/) is available, `poly2graph` will make use of them automatically to accelerate the computation bottleneck. Priority: `tensorflow` > `torch` > `numpy`.
