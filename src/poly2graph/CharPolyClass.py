@@ -180,7 +180,7 @@ class CharPolyClass:
             self.h_z = sp.Matrix.companion(monic_Poly_E).applyfunc(sp.expand)
 
         self.h_k = hz2hk_1d(self.h_z, k, z)
-        print(f"Derived Bloch Hamiltonian `h_z` with {self.num_bands} bands.")
+        print(f"[{self.__class__.__name__}] Derived Bloch Hamiltonian `h_z` with {self.num_bands} bands.")
 
 
     def _init_from_bloch(self) -> None:
@@ -196,7 +196,7 @@ class CharPolyClass:
         Poly_E_expr = Poly_E_pure.as_expr().xreplace({Poly_E_pure.gens[0]: E})
         # Define the full ChP including z dependencies
         self.ChP = sp.Poly(Poly_E_expr, z, 1/z, E) # Define gens explicitly
-        print(f"Derived Characteristic polynomial `ChP` with {self.num_bands} bands.")
+        print(f"[{self.__class__.__name__}] Derived Characteristic polynomial `ChP` with {self.num_bands} bands.")
 
 
     def _prepare_Poly_z(self) -> None:
@@ -208,11 +208,31 @@ class CharPolyClass:
         self.poly_p = Poly_z_bigen.degree(1/z)
         # Left hopping range
         self.poly_q = Poly_z_bigen.degree(z)
+        
         Poly_z = sp.Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
-        self.Poly_z_coeff = Poly_z.all_coeffs()
+        raw_coeffs = Poly_z.all_coeffs()
+        self.Poly_z_coeff = []
+        for coeff in raw_coeffs:
+            replace_map = {}
+            for sym in coeff.free_symbols:
+                # If name matches self.E but object identity is different, map it to self.E
+                if sym.name == self.E.name and sym is not self.E:
+                    replace_map[sym] = self.E                
+                # (Optional) Ensure parameters are also consistent
+                else:
+                    for p in self.params:
+                        if sym.name == p.name and sym is not p:
+                            replace_map[sym] = p
+                            break
+            # Apply replacement if needed; xreplace is faster/safer than subs for atomic swaps
+            if replace_map:
+                self.Poly_z_coeff.append(coeff.xreplace(replace_map))
+            else:
+                self.Poly_z_coeff.append(coeff)
+
         # Companion matrix of P(E)(z) for efficient root finding
-        monic_Poly_z = Poly_z.monic()
-        self.companion_E = sp.Matrix.companion(monic_Poly_z).applyfunc(sp.expand)
+        Poly_z_monic_coeff = sp.nsimplify(Poly_z.monic().as_expr(), rational=True)
+        self.companion_E = sp.Matrix.companion(sp.Poly(Poly_z_monic_coeff, z)).applyfunc(sp.expand)
         # Lambdify coefficients for numerical evaluation later
         self._lambdify_Poly_z_coeffs()
 

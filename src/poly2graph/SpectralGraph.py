@@ -139,6 +139,7 @@ class SpectralGraph:
         else:
             self.h_z = sp.Matrix.companion(Poly_E.monic()).applyfunc(sp.expand)
         self.h_k = hz2hk_1d(self.h_z, k, z)
+        print(f"[{self.__class__.__name__}] Derived Bloch Hamiltonian `h_z` with {self.num_bands} bands.")
 
     def _init_from_bloch(self) -> None:
         """
@@ -157,6 +158,7 @@ class SpectralGraph:
         self.Poly_E_coeff = Poly_E.all_coeffs()
         self.num_bands = Poly_E.degree()
         self.ChP = sp.Poly(Poly_E.as_expr(), z, 1/z, E)
+        print(f"[{self.__class__.__name__}] Derived Characteristic polynomial `ChP` with {self.num_bands} bands.")
 
     def _companion_E(self) -> None:
         """
@@ -174,7 +176,8 @@ class SpectralGraph:
         Poly_z = sp.Poly(sp.expand(self.ChP.as_expr() * z**self.poly_p), z)
         self.Poly_z_coeff = Poly_z.all_coeffs()
         # Companion matrix of P(E)(z) for efficient root finding
-        self.companion_E = sp.Matrix.companion(Poly_z.monic()).applyfunc(sp.expand)
+        Poly_z_monic_coeff = sp.nsimplify(Poly_z.monic().as_expr(), rational=True)
+        self.companion_E = sp.Matrix.companion(sp.Poly(Poly_z_monic_coeff, z)).applyfunc(sp.expand)
 
     def real_space_H(
         self,
@@ -247,13 +250,26 @@ class SpectralGraph:
             (*E_array.shape, len(self.Poly_z_coeff)), dtype=np.complex128
         )
         for i, coeff in enumerate(self.Poly_z_coeff):
-            if coeff.free_symbols == set():
-                coeff_arr[..., i] = coeff
-            elif coeff.free_symbols == {self.E}:
-                f = sp.lambdify(self.E, coeff, modules='numpy')
-                coeff_arr[..., i] = f(E_array)
+            free_syms = coeff.free_symbols
+
+            if not free_syms:
+                coeff_arr[..., i] = complex(coeff)
             else:
-                raise ValueError("Poly_z_coeff must be a function of E only")
+                if len(free_syms) == 1:
+                    sym = list(free_syms)[0]
+                    if sym.name == self.E.name:
+                        f = sp.lambdify(sym, coeff, modules='numpy')
+                        coeff_arr[..., i] = f(E_array)
+                    else:
+                        raise ValueError(
+                            f"Poly_z_coeff contains an unexpected symbol: {sym}. "
+                            f"Expected symbol with name: {self.E.name}"
+                        )
+                else:
+                    raise ValueError(
+                        f"Poly_z_coeff must be a function of E only. "
+                        f"Found multiple symbols: {free_syms}"
+                    )
         return coeff_arr
 
     def Poly_z_roots_from_E_arr(
